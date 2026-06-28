@@ -134,4 +134,5 @@ FundBot AI uses the same design system as LeanPortal:
 
 ## Related Projects
 
-- **[LeanPortal](https://github.com/YOUR_USER/lean-portal)** — Self-hosted algo trading platform (LEAN Engine + FastAPI + Vue)
+- **[LeanPortal](https://github.com/denniswong34/lean-portal)** — Self-hosted algo trading platform (LEAN Engine + FastAPI + Vue)
+- **[FundBot AI](https://github.com/denniswong34/fundbotai)** — AI-Powered Unified Fund Management Trading App
