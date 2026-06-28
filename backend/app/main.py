@@ -10,6 +10,9 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
 from app.database import init_db
+from app.i18n import load_translations
+from app.middleware import TenantMiddleware
+from app.routers import auth, orgs
 
 settings = get_settings()
 logger = logging.getLogger(__name__)
@@ -18,6 +21,8 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info(f"Starting {settings.APP_NAME}...")
+    load_translations()
+    logger.info("i18n translations loaded")
     await init_db()
     logger.info("Database initialized")
     yield
@@ -39,6 +44,13 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Tenant middleware (runs after CORS)
+app.add_middleware(TenantMiddleware)
+
+# Routers
+app.include_router(auth.router)
+app.include_router(orgs.router)
 
 
 @app.get("/api/health")

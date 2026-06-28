@@ -53,6 +53,7 @@ class Portfolio(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    org_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False)
     broker_connection_id = Column(
         Integer, ForeignKey("broker_connections.id", ondelete="SET NULL"), nullable=True
     )
@@ -159,6 +160,7 @@ class PortfolioRebalanceOrder(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     portfolio_id = Column(Integer, ForeignKey("portfolios.id", ondelete="CASCADE"), nullable=False)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    org_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False)
 
     # Group tracking
     rebalance_group_id = Column(String(36), nullable=False, index=True)
@@ -196,6 +198,7 @@ class PortfolioPerformanceSnapshot(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     portfolio_id = Column(Integer, ForeignKey("portfolios.id", ondelete="CASCADE"), nullable=False)
+    org_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False)
     snapshot_date = Column(DateTime, nullable=False)
 
     total_value = Column(DECIMAL(15, 2), nullable=False)

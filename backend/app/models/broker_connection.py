@@ -20,6 +20,7 @@ class BrokerConnection(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    org_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False)
     name = Column(String(100), nullable=False)
     broker_type = Column(String(50), nullable=False, default="paper")
     market_type = Column(Enum(MarketType, values_callable=enum_values), default=MarketType.STOCKS, nullable=False)

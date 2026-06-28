@@ -1,5 +1,6 @@
 -- FundPort Database Schema
 -- Unified Fund Management Trading App
+-- Multi-tenant, i18n, and theme support
 
 -- ============================================================
 -- Users & Authentication
@@ -18,11 +19,57 @@ CREATE TABLE IF NOT EXISTS users (
 );
 
 -- ============================================================
+-- Organizations (Tenants)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS organizations (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(200) NOT NULL,
+    slug VARCHAR(100) NOT NULL UNIQUE,
+    settings JSON DEFAULT NULL,
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_org_slug (slug)
+);
+
+-- ============================================================
+-- Organization Members
+-- ============================================================
+CREATE TABLE IF NOT EXISTS organization_members (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    org_id INT NOT NULL,
+    user_id INT NOT NULL,
+    role ENUM('owner', 'admin', 'member') NOT NULL DEFAULT 'member',
+    joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (org_id) REFERENCES organizations(id) ON DELETE CASCADE,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    UNIQUE KEY unique_org_user (org_id, user_id),
+    INDEX idx_org_member_user (user_id),
+    INDEX idx_org_member_org (org_id)
+);
+
+-- ============================================================
+-- User Settings (language, theme, timezone, telegram)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS user_settings (
+    user_id INT NOT NULL PRIMARY KEY,
+    language VARCHAR(10) NOT NULL DEFAULT 'en',
+    theme VARCHAR(10) NOT NULL DEFAULT 'dark',
+    timezone VARCHAR(50) NOT NULL DEFAULT 'Asia/Hong_Kong',
+    telegram_chat_id VARCHAR(100),
+    telegram_enabled BOOLEAN DEFAULT FALSE,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+-- ============================================================
 -- Broker Connections
 -- ============================================================
 CREATE TABLE IF NOT EXISTS broker_connections (
     id INT AUTO_INCREMENT PRIMARY KEY,
     user_id INT NOT NULL,
+    org_id INT NOT NULL,
     name VARCHAR(100) NOT NULL,
     broker_type VARCHAR(50) NOT NULL DEFAULT 'paper',
     market_type ENUM('stocks', 'crypto', 'both') NOT NULL DEFAULT 'stocks',
@@ -33,7 +80,9 @@ CREATE TABLE IF NOT EXISTS broker_connections (
     last_connected_at TIMESTAMP NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (org_id) REFERENCES organizations(id) ON DELETE CASCADE,
+    INDEX idx_broker_org (org_id)
 );
 
 -- ============================================================
@@ -42,6 +91,7 @@ CREATE TABLE IF NOT EXISTS broker_connections (
 CREATE TABLE IF NOT EXISTS portfolios (
     id INT AUTO_INCREMENT PRIMARY KEY,
     user_id INT NOT NULL,
+    org_id INT NOT NULL,
     broker_connection_id INT,
 
     -- Identity
@@ -79,8 +129,10 @@ CREATE TABLE IF NOT EXISTS portfolios (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
 
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (org_id) REFERENCES organizations(id) ON DELETE CASCADE,
     FOREIGN KEY (broker_connection_id) REFERENCES broker_connections(id) ON DELETE SET NULL,
-    INDEX idx_portfolio_user (user_id)
+    INDEX idx_portfolio_user (user_id),
+    INDEX idx_portfolio_org (org_id)
 );
 
 -- ============================================================
@@ -126,6 +178,7 @@ CREATE TABLE IF NOT EXISTS portfolio_rebalance_orders (
     id INT AUTO_INCREMENT PRIMARY KEY,
     portfolio_id INT NOT NULL,
     user_id INT NOT NULL,
+    org_id INT NOT NULL,
 
     -- Group tracking
     rebalance_group_id VARCHAR(36) NOT NULL,
@@ -155,8 +208,10 @@ CREATE TABLE IF NOT EXISTS portfolio_rebalance_orders (
 
     FOREIGN KEY (portfolio_id) REFERENCES portfolios(id) ON DELETE CASCADE,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (org_id) REFERENCES organizations(id) ON DELETE CASCADE,
     INDEX idx_rebalance_group (rebalance_group_id),
-    INDEX idx_rebalance_portfolio (portfolio_id)
+    INDEX idx_rebalance_portfolio (portfolio_id),
+    INDEX idx_rebalance_org (org_id)
 );
 
 -- ============================================================
@@ -165,6 +220,7 @@ CREATE TABLE IF NOT EXISTS portfolio_rebalance_orders (
 CREATE TABLE IF NOT EXISTS portfolio_performance_snapshots (
     id INT AUTO_INCREMENT PRIMARY KEY,
     portfolio_id INT NOT NULL,
+    org_id INT NOT NULL,
     snapshot_date DATE NOT NULL,
 
     total_value DECIMAL(15,2) NOT NULL,
@@ -180,7 +236,9 @@ CREATE TABLE IF NOT EXISTS portfolio_performance_snapshots (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 
     FOREIGN KEY (portfolio_id) REFERENCES portfolios(id) ON DELETE CASCADE,
-    UNIQUE KEY unique_snapshot (portfolio_id, snapshot_date)
+    FOREIGN KEY (org_id) REFERENCES organizations(id) ON DELETE CASCADE,
+    UNIQUE KEY unique_snapshot (portfolio_id, snapshot_date),
+    INDEX idx_snapshot_org (org_id)
 );
 
 -- ============================================================
@@ -201,8 +259,20 @@ CREATE TABLE IF NOT EXISTS notifications (
 );
 
 -- ============================================================
--- Default Admin User (password: admin123)
+-- Default Admin User (password: admin123) with Organization
 -- ============================================================
+INSERT INTO organizations (name, slug, settings, is_active) VALUES
+('Default Organization', 'default', '{"locale":"en","theme":"dark"}', TRUE)
+ON DUPLICATE KEY UPDATE name=name;
+
 INSERT INTO users (username, email, password_hash, display_name, role) VALUES
-('admin', 'admin@fundport.local', '$2b$12$LJ3m4ys3Lk0TSwHnbfOMiOXPm1Qlq5GzYxq5H8sK5x5x5x5x5x5x5x', 'Administrator', 'admin')
+('admin', 'admin@fundbotai.local', '$2b$12$LJ3m4ys3Lk0TSwHnbfOMiOXPm1Qlq5GzYxq5H8sK5x5x5x5x5x5x5x', 'Administrator', 'admin')
 ON DUPLICATE KEY UPDATE username=username;
+
+INSERT INTO user_settings (user_id, language, theme, timezone) VALUES
+(1, 'en', 'dark', 'Asia/Hong_Kong')
+ON DUPLICATE KEY UPDATE user_id=user_id;
+
+INSERT INTO organization_members (org_id, user_id, role) VALUES
+(1, 1, 'owner')
+ON DUPLICATE KEY UPDATE org_id=org_id;

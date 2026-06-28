@@ -1,0 +1,77 @@
+{
+  "common": {
+    "app_name": "FundBot AI",
+    "welcome": "Welcome",
+    "login": "Login",
+    "logout": "Logout",
+    "save": "Save",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "confirm": "Confirm",
+    "search": "Search",
+    "filter": "Filter",
+    "loading": "Loading...",
+    "error": "Error",
+    "success": "Success",
+    "warning": "Warning",
+    "no_data": "No data available",
+    "back": "Back",
+    "next": "Next",
+    "submit": "Submit",
+    "reset": "Reset"
+  },
+  "nav": {
+    "dashboard": "Dashboard",
+    "portfolios": "Portfolios",
+    "brokers": "Brokers",
+    "performance": "Performance",
+    "settings": "Settings",
+    "org_admin": "Organization"
+  },
+  "auth": {
+    "login_title": "Welcome Back",
+    "login_subtitle": "Sign in to your account",
+    "register_title": "Create Account",
+    "email": "Email",
+    "password": "Password",
+    "username": "Username",
+    "forgot_password": "Forgot password?",
+    "no_account": "Don't have an account?",
+    "have_account": "Already have an account?"
+  },
+  "portfolio": {
+    "title": "Portfolios",
+    "create": "Create Portfolio",
+    "edit": "Edit Portfolio",
+    "delete": "Delete Portfolio",
+    "total_value": "Total Value",
+    "total_pnl": "Total P&L",
+    "holdings": "Holdings",
+    "add_holding": "Add Holding",
+    "rebalance": "Rebalance",
+    "rebalance_preview": "Preview Rebalance",
+    "drift": "Drift",
+    "target_weight": "Target Weight",
+    "current_weight": "Current Weight",
+    "performance": "Performance"
+  },
+  "settings": {
+    "title": "Settings",
+    "language": "Language",
+    "theme": "Theme",
+    "dark": "Dark",
+    "light": "Light",
+    "timezone": "Timezone",
+    "telegram": "Telegram Notifications"
+  },
+  "org": {
+    "title": "Organization",
+    "members": "Members",
+    "invite": "Invite Member",
+    "remove": "Remove Member",
+    "role": "Role",
+    "owner": "Owner",
+    "admin": "Admin",
+    "member": "Member"
+  }
+}
