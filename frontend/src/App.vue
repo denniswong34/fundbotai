@@ -82,6 +82,7 @@ const navItems = [
   { title: 'Portfolios', titleKey: 'nav.portfolios', icon: 'mdi-briefcase-variant', to: '/portfolios' },
   { title: 'Brokers', titleKey: 'nav.brokers', icon: 'mdi-link-variant', to: '/brokers' },
   { title: 'Performance', titleKey: 'nav.performance', icon: 'mdi-chart-line', to: '/performance' },
+  { title: 'Organization', titleKey: 'nav.org_admin', icon: 'mdi-domain', to: '/org' },
 ]
 
 onMounted(() => {

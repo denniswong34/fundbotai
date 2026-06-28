@@ -18,7 +18,33 @@
     "back": "Back",
     "next": "Next",
     "submit": "Submit",
-    "reset": "Reset"
+    "reset": "Reset",
+    "name": "Name",
+    "description": "Description",
+    "currency": "Currency",
+    "broker": "Broker",
+    "symbol": "Symbol",
+    "shares": "Shares",
+    "price": "Price",
+    "type": "Type",
+    "market": "Market",
+    "side": "Side",
+    "actions": "Actions",
+    "add": "Add",
+    "quick_actions": "Quick Actions",
+    "connect_broker": "Connect Broker",
+    "recent": "Recent",
+    "last_rebalanced": "Last Rebalanced",
+    "sync": "Sync",
+    "add_broker": "Add Broker",
+    "connected": "Connected",
+    "disconnected": "Disconnected",
+    "test_connection": "Test Connection",
+    "last_connected": "Last Connected",
+    "confirm_delete": "Are you sure you want to delete",
+    "confirm_password": "Confirm Password",
+    "slug": "Slug",
+    "org_info": "Organization Info"
   },
   "nav": {
     "dashboard": "Dashboard",
@@ -53,7 +79,25 @@
     "drift": "Drift",
     "target_weight": "Target Weight",
     "current_weight": "Current Weight",
-    "performance": "Performance"
+    "performance": "Performance",
+    "allocation": "Allocation",
+    "market_value": "Market Value",
+    "unrealized_pnl": "Unrealized P&L",
+    "drift_analysis": "Drift Analysis",
+    "drift_threshold": "Drift Threshold",
+    "target": "Target",
+    "current": "Current",
+    "rebalance_config": "Rebalance Configuration",
+    "order_type": "Order Type",
+    "cash_reserve": "Cash Reserve",
+    "rebalance_frequency": "Rebalance Frequency",
+    "auto_rebalance": "Auto-Rebalance",
+    "initial_holdings": "Initial Holdings",
+    "edit_holding": "Edit Holding",
+    "estimated_cost": "Estimated Cost",
+    "execute_rebalance": "Execute Rebalance",
+    "target_value": "Target Value",
+    "diff": "Diff"
   },
   "settings": {
     "title": "Settings",
@@ -62,7 +106,10 @@
     "dark": "Dark",
     "light": "Light",
     "timezone": "Timezone",
-    "telegram": "Telegram Notifications"
+    "telegram": "Telegram Notifications",
+    "preferences": "Preferences",
+    "enable_telegram": "Enable Telegram Notifications",
+    "telegram_chat_id": "Telegram Chat ID"
   },
   "org": {
     "title": "Organization",
@@ -72,6 +119,7 @@
     "role": "Role",
     "owner": "Owner",
     "admin": "Admin",
-    "member": "Member"
+    "member": "Member",
+    "org_info": "Organization Info"
   }
 }

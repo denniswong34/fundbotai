@@ -18,7 +18,33 @@
     "back": "返回",
     "next": "下一步",
     "submit": "提交",
-    "reset": "重置"
+    "reset": "重置",
+    "name": "名稱",
+    "description": "描述",
+    "currency": "貨幣",
+    "broker": "經紀商",
+    "symbol": "代碼",
+    "shares": "持股數",
+    "price": "價格",
+    "type": "類型",
+    "market": "市場",
+    "side": "方向",
+    "actions": "操作",
+    "add": "新增",
+    "quick_actions": "快速操作",
+    "connect_broker": "連接經紀商",
+    "recent": "最近",
+    "last_rebalanced": "上次再平衡",
+    "sync": "同步",
+    "add_broker": "新增經紀商",
+    "connected": "已連接",
+    "disconnected": "未連接",
+    "test_connection": "測試連接",
+    "last_connected": "上次連接",
+    "confirm_delete": "確定要刪除",
+    "confirm_password": "確認密碼",
+    "slug": "別名",
+    "org_info": "組織資訊"
   },
   "nav": {
     "dashboard": "儀表板",
@@ -53,7 +79,25 @@
     "drift": "偏離",
     "target_weight": "目標權重",
     "current_weight": "目前權重",
-    "performance": "績效"
+    "performance": "績效",
+    "allocation": "配置",
+    "market_value": "市值",
+    "unrealized_pnl": "未實現損益",
+    "drift_analysis": "偏離分析",
+    "drift_threshold": "偏離閾值",
+    "target": "目標",
+    "current": "目前",
+    "rebalance_config": "再平衡配置",
+    "order_type": "委託類型",
+    "cash_reserve": "現金儲備",
+    "rebalance_frequency": "再平衡頻率",
+    "auto_rebalance": "自動再平衡",
+    "initial_holdings": "初始持股",
+    "edit_holding": "編輯持股",
+    "estimated_cost": "估計成本",
+    "execute_rebalance": "執行再平衡",
+    "target_value": "目標價值",
+    "diff": "差異"
   },
   "settings": {
     "title": "設定",
@@ -62,7 +106,10 @@
     "dark": "深色",
     "light": "淺色",
     "timezone": "時區",
-    "telegram": "Telegram 通知"
+    "telegram": "Telegram 通知",
+    "preferences": "偏好設定",
+    "enable_telegram": "啟用 Telegram 通知",
+    "telegram_chat_id": "Telegram 聊天 ID"
   },
   "org": {
     "title": "組織",
@@ -72,6 +119,7 @@
     "role": "角色",
     "owner": "擁有者",
     "admin": "管理員",
-    "member": "成員"
+    "member": "成員",
+    "org_info": "組織資訊"
   }
 }
