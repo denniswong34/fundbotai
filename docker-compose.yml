@@ -1,0 +1,61 @@
+version: "3.8"
+
+services:
+  mariadb:
+    image: mariadb:10.11
+    container_name: fundbotai-db
+    restart: unless-stopped
+    ports:
+      - "3309:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-fundbotai_root_2024}
+      MYSQL_DATABASE: fundbotai
+      MYSQL_USER: fundbotai
+      MYSQL_PASSWORD: ${DB_PASSWORD:-fundbotai_2024}
+    volumes:
+      - fundport-db:/var/lib/mysql
+      - ./database/init:/docker-entrypoint-initdb.d
+    command: >
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_unicode_ci
+      --max_connections=200
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: fundbotai-backend
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: mysql+aiomysql://fundport:${DB_PASSWORD:-fundport_2024}@mariadb:3306/fundport
+      JWT_SECRET: ${JWT_SECRET:-change-me-in-production}
+      JWT_ALGORITHM: HS256
+      ACCESS_TOKEN_EXPIRE_MINUTES: 30
+      REFRESH_TOKEN_EXPIRE_DAYS: 7
+      CORS_ORIGINS: http://localhost:8081,http://localhost:5173
+      APP_NAME: FundBot AI
+      APP_VERSION: 0.1.0
+    depends_on:
+      - mariadb
+    volumes:
+      - ./backend/app:/app/app
+      - fundport-data:/data
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: fundbotai-frontend
+    restart: unless-stopped
+    ports:
+      - "8081:80"
+    environment:
+      VITE_API_BASE_URL: /api
+    depends_on:
+      - backend
+
+volumes:
+  fundbotai-db:
+  fundbotai-data:
