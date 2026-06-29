@@ -287,10 +287,20 @@ class PortfolioManager:
     # ── Rebalance ───────────────────────────────────────────
 
     async def calculate_rebalance_plan(
-        self, portfolio_id: int
+        self, portfolio_id: int, org_id: int = None
     ) -> dict:
         """Calculate a rebalance plan (preview) for a portfolio."""
-        portfolio = await self.get_portfolio(0, portfolio_id)
+        if org_id:
+            portfolio = await self.get_portfolio(org_id, portfolio_id)
+        else:
+            # Fallback: get by id only (used when org check already done by caller)
+            result = await self.db.execute(
+                select(Portfolio).where(Portfolio.id == portfolio_id)
+            )
+            portfolio = result.scalar_one_or_none()
+            if portfolio is None:
+                raise PortfolioNotFound(f"Portfolio {portfolio_id} not found")
+
         holdings = await self.get_holdings(portfolio_id)
 
         total_value = portfolio.total_value or Decimal("0")
@@ -350,10 +360,18 @@ class PortfolioManager:
         }
 
     async def execute_rebalance(
-        self, portfolio_id: int, user_id: int, order_type: str = "market"
+        self, portfolio_id: int, user_id: int, order_type: str = "market", org_id: int = None
     ) -> list[PortfolioRebalanceOrder]:
         """Execute a rebalance: create orders with sells first, then buys."""
-        portfolio = await self.get_portfolio(0, portfolio_id)  # org_id=0 bypass check
+        if org_id:
+            portfolio = await self.get_portfolio(org_id, portfolio_id)
+        else:
+            result = await self.db.execute(
+                select(Portfolio).where(Portfolio.id == portfolio_id)
+            )
+            portfolio = result.scalar_one_or_none()
+            if portfolio is None:
+                raise PortfolioNotFound(f"Portfolio {portfolio_id} not found")
         plan = await self.calculate_rebalance_plan(portfolio_id)
         group_id = str(uuid4())
         created_orders = []
@@ -397,9 +415,17 @@ class PortfolioManager:
 
     # ── Sync from Broker ────────────────────────────────────
 
-    async def sync_from_broker(self, portfolio_id: int) -> dict:
+    async def sync_from_broker(self, portfolio_id: int, org_id: int = None) -> dict:
         """Sync current portfolio holdings data from the linked broker connection."""
-        portfolio = await self.get_portfolio(0, portfolio_id)
+        if org_id:
+            portfolio = await self.get_portfolio(org_id, portfolio_id)
+        else:
+            result = await self.db.execute(
+                select(Portfolio).where(Portfolio.id == portfolio_id)
+            )
+            portfolio = result.scalar_one_or_none()
+            if portfolio is None:
+                raise PortfolioNotFound(f"Portfolio {portfolio_id} not found")
 
         if not portfolio.broker_connection_id:
             # No broker — just recalc from current data
@@ -470,7 +496,12 @@ class PortfolioManager:
 
     async def _record_performance_snapshot(self, portfolio_id: int) -> None:
         """Record today's performance snapshot for charting."""
-        portfolio = await self.get_portfolio(0, portfolio_id)
+        result = await self.db.execute(
+            select(Portfolio).where(Portfolio.id == portfolio_id)
+        )
+        portfolio = result.scalar_one_or_none()
+        if portfolio is None:
+            return
         today = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
 
         # Check if snapshot already exists for today

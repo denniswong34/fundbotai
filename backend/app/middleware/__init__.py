@@ -31,8 +31,12 @@ class TenantMiddleware(BaseHTTPMiddleware):
 
     async def dispatch(self, request: Request, call_next):
         # Skip public routes
-        if _PUBLIC_ROUTES.match(request.url.path) or request.method == "OPTIONS":
+        path = request.url.path
+        print(f"[TenantMiddleware] path={path}", flush=True)
+        if _PUBLIC_ROUTES.match(path) or request.method == "OPTIONS":
+            print(f"[TenantMiddleware] SKIPPING public route: {path}", flush=True)
             return await call_next(request)
+        print(f"[TenantMiddleware] PROCESSING protected route: {path}", flush=True)
 
         # Set defaults on state
         request.state.org_id = None

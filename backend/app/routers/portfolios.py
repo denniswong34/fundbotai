@@ -223,7 +223,7 @@ async def rebalance_plan(
         await pm.get_portfolio(org.id, portfolio_id)
     except PortfolioNotFound:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Portfolio not found")
-    return await pm.calculate_rebalance_plan(portfolio_id)
+    return await pm.calculate_rebalance_plan(portfolio_id, org.id)
 
 
 @router.post("/{portfolio_id}/rebalance/execute", response_model=list[RebalanceOrderResponse])
@@ -245,7 +245,7 @@ async def rebalance_execute(
         await pm.get_portfolio(org.id, portfolio_id)
     except PortfolioNotFound:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Portfolio not found")
-    return await pm.execute_rebalance(portfolio_id, user.id, req.order_type)
+    return await pm.execute_rebalance(portfolio_id, user.id, req.order_type, org.id)
 
 
 # ── Sync ────────────────────────────────────────────────────
@@ -264,7 +264,7 @@ async def sync_portfolio(
         await pm.get_portfolio(org.id, portfolio_id)
     except PortfolioNotFound:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Portfolio not found")
-    result = await pm.sync_from_broker(portfolio_id)
+    result = await pm.sync_from_broker(portfolio_id, org.id)
     return result
 
 
