@@ -74,26 +74,24 @@ s, d = req("POST", f"/portfolios/{pid}/holdings", {
 }, token=tok)
 check("Add AAPL (market value $10k)", s, 201, d)
 
-# GOOG at $1,680/share, target 5% = $500 → 500/1680 = 0.29 shares → skip!
+# Total = $10,000 (AAPL 50×200). GOOGL target 5% = $500. $500/$1,680 = 0.29 < 1 share → REJECTED
 s, d = req("POST", f"/portfolios/{pid}/holdings", {
     "symbol": "GOOGL", "target_weight_pct": 5.0,
     "current_shares": 0, "current_price": 1680.0,
     "avg_cost": 0, "market": "US",
 }, token=tok)
-check("Add GOOGL (target 5%)", s, 201, d)
-# lot_size should be 1
-check("lot_size=1", d.get("lot_size"), 1, d)
+check("Reject GOOGL 5% (< min 1 share)", s, 400, d)
+if s == 400:
+    check("Error mentions minimum shares", "Minimum 1 share" in str(d.get("detail","")), True, d)
 
-# Total = $10,000 (AAPL 50×200). GOOGL target 5% = $500. $500/$1,680 = 0.29 < 1 share → skip
-# But AAPL needs to go from 100% to 95% → sell $600 / $200 = 3 shares ✅
-s, d = req("POST", f"/portfolios/{pid}/rebalance/plan", token=tok)
-check("Plan edge case", s, 200, d)
-if s == 200:
-    ords = d.get("orders", [])
-    has_googl_buy = any(o["symbol"] == "GOOGL" and o["side"] == "buy" for o in ords)
-    has_aapl_sell = any(o["symbol"] == "AAPL" and o["side"] == "sell" for o in ords)
-    check("No BUY GOOGL (< 1 share skipped)", not has_googl_buy, True, d)
-    check("AAPL sell exists (95% target)", has_aapl_sell, True, d)
+# Now try GOOGL at 17% (just above 16.8% threshold = 1 share)
+s, d = req("POST", f"/portfolios/{pid}/holdings", {
+    "symbol": "GOOGL", "target_weight_pct": 17.0,
+    "current_shares": 0, "current_price": 1680.0,
+    "avg_cost": 0, "market": "US",
+}, token=tok)
+check("Accept GOOGL 17% (can buy 1 share)", s, 201, d)
+check("lot_size=1 for US", d.get("lot_size"), 1, d)
 
 # === TEST 2: HK stock, lot size test ===
 print("\n--- HK Stock: Tencent 0700 (100 shares/lot) ---")

@@ -39,6 +39,11 @@ class HoldingNotFound(PortfolioError):
     pass
 
 
+class InsufficientCapitalError(PortfolioError):
+    """Raised when a holding's target weight is too small to buy even 1 lot."""
+    pass
+
+
 # ── Helper ──────────────────────────────────────────────────
 
 
@@ -179,6 +184,12 @@ class PortfolioManager:
             current_price=Decimal(str(data.get("current_price", 0))),
             notes=data.get("notes"),
         )
+        # Validate minimum purchase unit before saving
+        await self._validate_minimum_unit(
+            portfolio_id, holding.target_weight_pct,
+            holding.current_price, lot_size,
+            holding.symbol, market
+        )
         self._recalc_holding_values(holding)
         self.db.add(holding)
         await self.db.commit()
@@ -209,6 +220,16 @@ class PortfolioManager:
         # Recalc if price or shares changed
         if "current_price" in data or "current_shares" in data or "avg_cost" in data:
             self._recalc_holding_values(holding)
+
+        # Validate minimum unit when target weight or price changes
+        if "target_weight_pct" in data or "current_price" in data:
+            tw = Decimal(str(data.get("target_weight_pct", holding.target_weight_pct or 0)))
+            price = Decimal(str(data.get("current_price", holding.current_price or 0)))
+            ls = int(data.get("lot_size", holding.lot_size or 1))
+            await self._validate_minimum_unit(
+                holding.portfolio_id, tw, price, ls,
+                holding.symbol, holding.market
+            )
 
         await self.db.commit()
         await self.db.refresh(holding)
@@ -274,6 +295,13 @@ class PortfolioManager:
                     notes=hd.get("notes"),
                 )
                 self._recalc_holding_values(new_h)
+                # Validate minimum unit for new holdings
+                tw = Decimal(str(hd["target_weight_pct"]))
+                price = Decimal(str(hd.get("current_price", 0)))
+                lot_sz = int(lot_size or 1)
+                await self._validate_minimum_unit(
+                    portfolio_id, tw, price, lot_sz, symbol, market
+                )
                 self.db.add(new_h)
                 updated.append(new_h)
 
@@ -296,6 +324,44 @@ class PortfolioManager:
             holding.unrealized_pnl_pct = _pct((price - cost) / cost)
         else:
             holding.unrealized_pnl_pct = Decimal("0")
+
+    async def _validate_minimum_unit(
+        self, portfolio_id: int, target_weight_pct: Decimal,
+        current_price: Decimal, lot_size: int,
+        symbol: str, market: str
+    ) -> None:
+        """Validate that the target weight can buy at least 1 lot.
+
+        Raises InsufficientCapitalError with a helpful message if not.
+        """
+        if current_price is None or current_price <= 0 or lot_size <= 0:
+            return  # Can't validate without price
+
+        result = await self.db.execute(
+            select(Portfolio).where(Portfolio.id == portfolio_id)
+        )
+        portfolio = result.scalar_one_or_none()
+        if portfolio is None:
+            return
+
+        total_value = portfolio.total_value or Decimal("0")
+        if total_value == 0:
+            holdings = await self.get_holdings(portfolio_id)
+            total_value = sum(h.market_value or Decimal("0") for h in holdings)
+        if total_value <= 0:
+            return  # No portfolio value yet, can't validate
+
+        target_value = _round2(total_value * target_weight_pct / Decimal("100"))
+        min_needed = _round2(current_price * Decimal(str(lot_size)))
+
+        if target_value < min_needed:
+            min_pct = (min_needed / total_value * Decimal("100")).quantize(Decimal("0.01"))
+            raise InsufficientCapitalError(
+                f"{symbol}: Minimum {lot_size} share(s) required (${float(min_needed):,.2f}). "
+                f"With {market} lot rules, you need at least {min_pct}% of "
+                f"${float(total_value):,.2f} total capital (currently {target_weight_pct}%). "
+                f"Increase the target weight or reduce total portfolio holdings."
+            )
 
     # ── Rebalance ───────────────────────────────────────────
 

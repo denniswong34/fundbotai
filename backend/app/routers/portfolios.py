@@ -24,7 +24,7 @@ from app.schemas.portfolio import (
     PerformanceData,
     AllocationData,
 )
-from app.services.portfolio_service import PortfolioManager, PortfolioNotFound, HoldingNotFound
+from app.services.portfolio_service import PortfolioManager, PortfolioNotFound, HoldingNotFound, InsufficientCapitalError
 
 router = APIRouter(prefix="/api/portfolios", tags=["portfolios"])
 
@@ -152,7 +152,10 @@ async def add_holding(
         await pm.get_portfolio(org.id, portfolio_id)
     except PortfolioNotFound:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Portfolio not found")
-    return await pm.add_holding(portfolio_id, data.model_dump())
+    try:
+        return await pm.add_holding(portfolio_id, data.model_dump())
+    except InsufficientCapitalError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
 @router.put("/{portfolio_id}/holdings/batch", response_model=list[PortfolioHoldingResponse])
@@ -169,9 +172,12 @@ async def batch_update_holdings(
         await pm.get_portfolio(org.id, portfolio_id)
     except PortfolioNotFound:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Portfolio not found")
-    return await pm.batch_update_holdings(
-        portfolio_id, [h.model_dump() for h in holdings_data]
-    )
+    try:
+        return await pm.batch_update_holdings(
+            portfolio_id, [h.model_dump() for h in holdings_data]
+        )
+    except InsufficientCapitalError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
 @router.put("/{portfolio_id}/holdings/{holding_id}", response_model=PortfolioHoldingResponse)
@@ -189,6 +195,8 @@ async def update_holding(
         return await pm.update_holding(holding_id, data.model_dump(exclude_unset=True))
     except HoldingNotFound:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Holding not found")
+    except InsufficientCapitalError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
 @router.delete("/{portfolio_id}/holdings/{holding_id}", status_code=status.HTTP_204_NO_CONTENT)
