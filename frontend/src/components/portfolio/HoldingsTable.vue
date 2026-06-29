@@ -7,6 +7,7 @@
           <th class="text-right">{{ $t('portfolio.target_weight') }}</th>
           <th class="text-right">{{ $t('portfolio.current_weight') }}</th>
           <th class="text-right">{{ $t('common.shares') }}</th>
+          <th class="text-center">{{ $t('common.lot_size') }}</th>
           <th class="text-right">{{ $t('common.price') }}</th>
           <th class="text-right">{{ $t('portfolio.market_value') }}</th>
           <th class="text-right">{{ $t('portfolio.unrealized_pnl') }}</th>
@@ -23,6 +24,11 @@
           <td class="text-right font-weight-bold">{{ Number(h.target_weight_pct).toFixed(2) }}%</td>
           <td class="text-right">{{ Number(h.current_weight_pct).toFixed(2) }}%</td>
           <td class="text-right mono">{{ Number(h.current_shares).toLocaleString(undefined, { maximumFractionDigits: 2 }) }}</td>
+          <td class="text-center">
+            <v-chip size="x-small" variant="flat" color="primary" class="px-1">
+              {{ h.lot_size || 1 }}
+            </v-chip>
+          </td>
           <td class="text-right mono">{{ formatCurrency(h.current_price) }}</td>
           <td class="text-right mono">{{ formatCurrency(h.market_value) }}</td>
           <td class="text-right mono" :class="Number(h.unrealized_pnl) >= 0 ? 'text-success' : 'text-error'">
@@ -48,7 +54,7 @@
           </td>
         </tr>
         <tr v-if="holdings.length === 0">
-          <td colspan="9" class="text-center text-medium-emphasis py-4">
+          <td colspan="10" class="text-center text-medium-emphasis py-4">
             {{ $t('common.no_data') }}
           </td>
         </tr>
@@ -69,14 +75,27 @@
             density="compact"
             class="mb-3"
           />
-          <v-text-field
-            v-model="editForm.current_shares"
-            :label="$t('common.shares')"
-            type="number"
-            variant="outlined"
-            density="compact"
-            class="mb-3"
-          />
+          <v-row class="mb-3">
+            <v-col cols="6">
+              <v-text-field
+                v-model="editForm.current_shares"
+                :label="$t('common.shares')"
+                type="number"
+                variant="outlined"
+                density="compact"
+              />
+            </v-col>
+            <v-col cols="6">
+              <v-text-field
+                v-model="editForm.lot_size"
+                label="Lot Size"
+                type="number"
+                variant="outlined"
+                density="compact"
+                hint="Min order unit for this market"
+              />
+            </v-col>
+          </v-row>
           <v-text-field
             v-model="editForm.current_price"
             :label="$t('common.price')"
@@ -96,7 +115,7 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref } from 'vue'
 
 const props = defineProps({
   holdings: { type: Array, default: () => [] },
@@ -115,7 +134,7 @@ function formatCurrency(val) {
 
 function getDriftColor(h) {
   const drift = Math.abs(Number(h.drift_pct || 0))
-  const threshold = 5 // default threshold
+  const threshold = 5
   if (drift <= threshold * 0.5) return 'success'
   if (drift <= threshold) return 'warning'
   return 'error'
@@ -123,8 +142,7 @@ function getDriftColor(h) {
 
 function getDriftText(h) {
   const drift = Number(h.drift_pct || 0)
-  const abs = Math.abs(drift)
-  return `${drift >= 0 ? '+' : ''}${abs.toFixed(2)}%`
+  return `${drift >= 0 ? '+' : ''}${Math.abs(drift).toFixed(2)}%`
 }
 
 function editHolding(h) {
@@ -133,6 +151,7 @@ function editHolding(h) {
     target_weight_pct: Number(h.target_weight_pct),
     current_shares: Number(h.current_shares),
     current_price: Number(h.current_price),
+    lot_size: h.lot_size || 1,
   }
   editDialog.value = true
 }

@@ -44,7 +44,8 @@
     "confirm_delete": "确定要删除",
     "confirm_password": "确认密码",
     "slug": "别名",
-    "org_info": "组织信息"
+    "org_info": "组织信息",
+    "lot_size": "每手股数"
   },
   "nav": {
     "dashboard": "仪表板",

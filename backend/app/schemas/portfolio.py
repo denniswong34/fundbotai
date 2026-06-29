@@ -94,6 +94,7 @@ class PortfolioHoldingCreate(BaseModel):
     avg_cost: Decimal = Field(default=0)
     current_price: Decimal = Field(default=0)
     notes: Optional[str] = None
+    lot_size: Optional[int] = None
 
 
 class PortfolioHoldingUpdate(BaseModel):
@@ -106,6 +107,7 @@ class PortfolioHoldingUpdate(BaseModel):
     unrealized_pnl_pct: Optional[Decimal] = None
     notes: Optional[str] = None
     is_active: Optional[bool] = None
+    lot_size: Optional[int] = None
 
 
 class PortfolioHoldingResponse(BaseModel):
@@ -124,6 +126,7 @@ class PortfolioHoldingResponse(BaseModel):
     unrealized_pnl_pct: Decimal
     is_active: bool
     notes: Optional[str] = None
+    lot_size: Optional[int] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
@@ -148,6 +151,9 @@ class RebalanceOrder(BaseModel):
     diff_value: Decimal
     diff_shares: Decimal
     estimated_price: Decimal
+    lot_size: Optional[int] = None
+    min_units: Optional[Decimal] = None
+    market: Optional[str] = None
 
 
 class RebalancePlan(BaseModel):

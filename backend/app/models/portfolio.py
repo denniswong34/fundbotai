@@ -142,6 +142,10 @@ class PortfolioHolding(Base):
     unrealized_pnl = Column(DECIMAL(15, 2), default=0)
     unrealized_pnl_pct = Column(DECIMAL(7, 4), default=0)
 
+    # Market-specific lot size (minimum purchase unit)
+    lot_size = Column(Integer, default=1, nullable=False,
+                      comment="Minimum tradable unit: US=1, HK=lot (default 100), CN=100, JP=100")
+
     # Flags
     is_active = Column(Boolean, default=True)
     notes = Column(Text)

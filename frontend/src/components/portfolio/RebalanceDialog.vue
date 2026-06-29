@@ -21,6 +21,7 @@
               <th class="text-right">{{ $t('portfolio.target_value') }}</th>
               <th class="text-right">{{ $t('portfolio.diff') }}</th>
               <th class="text-right">{{ $t('common.shares') }}</th>
+              <th class="text-center">Lot</th>
               <th class="text-center">{{ $t('common.side') }}</th>
             </tr>
           </thead>
@@ -32,6 +33,11 @@
               <td class="text-right mono">{{ formatCurrency(o.target_value) }}</td>
               <td class="text-right mono">{{ formatCurrency(o.diff_value) }}</td>
               <td class="text-right mono">{{ Number(o.diff_shares).toFixed(2) }}</td>
+              <td class="text-center">
+                <v-chip size="x-small" variant="flat" color="primary" class="px-1">
+                  {{ o.lot_size || 1 }}
+                </v-chip>
+              </td>
               <td class="text-center">
                 <v-chip
                   :color="o.side === 'buy' ? 'success' : 'error'"

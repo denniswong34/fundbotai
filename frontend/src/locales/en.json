@@ -44,7 +44,8 @@
     "confirm_delete": "Are you sure you want to delete",
     "confirm_password": "Confirm Password",
     "slug": "Slug",
-    "org_info": "Organization Info"
+    "org_info": "Organization Info",
+    "lot_size": "Lot Size"
   },
   "nav": {
     "dashboard": "Dashboard",

@@ -1,4 +1,14 @@
-"""Broker service — broker adapter resolution, connection management, and broker type registry."""
+"""Broker service — broker adapter resolution, connection management, and broker type registry.
+
+Adapters are loaded dynamically from ``app.services.broker_adapters`` via the
+``load_adapter_class()`` function in that package.  New broker types can be
+added by:
+  1) Creating a new module in ``broker_adapters/`` with a ``BrokerAdapter`` subclass.
+  2) Adding the broker type key to ``BROKER_TYPES`` below.
+  3) Mapping the key in ``broker_adapters/__init__.py``'s ``_ADAPTER_MODULES`` dict.
+"""
+
+from __future__ import annotations
 
 import logging
 from typing import Any
@@ -7,16 +17,22 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.broker_connection import BrokerConnection
+from app.services.broker_adapters.base import BrokerAdapter
+from app.services.broker_adapters.paper import PaperBrokerAdapter
+from app.services.broker_adapters import load_adapter_class
 
 logger = logging.getLogger(__name__)
 
-# ── Broker Type Registry ────────────────────────────────────
+# ══════════════════════════════════════════════════════════════════════
+# Broker Type Registry
+# ══════════════════════════════════════════════════════════════════════
 
 BROKER_TYPES: dict[str, dict[str, Any]] = {
+    # ── Simulated ────────────────────────────────────────────
     "paper": {
         "type": "paper",
         "name": "Paper Trading",
-        "description": "Simulated trading environment for testing strategies",
+        "description": "Simulated trading environment for testing strategies without real money",
         "markets": ["stocks", "crypto"],
         "config_schema": {
             "type": "object",
@@ -34,25 +50,131 @@ BROKER_TYPES: dict[str, dict[str, Any]] = {
             },
         },
     },
-    "webull": {
-        "type": "webull",
-        "name": "Webull",
-        "description": "Webull trading platform integration",
+    # ── Futu / Futubull ──────────────────────────────────────
+    "futu": {
+        "type": "futu",
+        "name": "Futu (Futubull)",
+        "description": "Futu Holdings Ltd — HK, US & China A-share trading via Futu OpenAPI",
         "markets": ["stocks"],
         "config_schema": {
             "type": "object",
             "properties": {
-                "app_key": {"type": "string", "title": "App Key"},
-                "app_secret": {"type": "string", "title": "App Secret", "format": "password"},
-                "account_id": {"type": "string", "title": "Account ID"},
+                "api_host": {"type": "string", "title": "OpenD Host", "default": "127.0.0.1"},
+                "api_port": {"type": "integer", "title": "OpenD Port", "default": 11111},
+                "unlock_password": {"type": "string", "title": "Unlock Password", "format": "password"},
+                "market": {
+                    "type": "string",
+                    "title": "Market",
+                    "enum": ["HK", "US", "CN"],
+                    "default": "HK",
+                },
             },
-            "required": ["app_key", "app_secret"],
+            "required": ["unlock_password"],
         },
     },
+    # ── Webull Hong Kong ─────────────────────────────────────
+    "webull_hk": {
+        "type": "webull_hk",
+        "name": "Webull Hong Kong",
+        "description": "Webull Securities Limited — HKEX stocks & ETFs",
+        "markets": ["stocks"],
+        "config_schema": {
+            "type": "object",
+            "properties": {
+                "account_id": {"type": "string", "title": "Account ID"},
+                "trade_pin": {"type": "string", "title": "Trade PIN", "format": "password"},
+                "region_id": {"type": "string", "title": "Region", "default": "hk"},
+            },
+            "required": ["account_id", "trade_pin"],
+        },
+    },
+    # ── Webull US ────────────────────────────────────────────
+    "webull_us": {
+        "type": "webull_us",
+        "name": "Webull US",
+        "description": "Webull Financial LLC — US stocks, ETFs & options",
+        "markets": ["stocks"],
+        "config_schema": {
+            "type": "object",
+            "properties": {
+                "account_id": {"type": "string", "title": "Account ID"},
+                "trade_pin": {"type": "string", "title": "Trade PIN", "format": "password"},
+                "region_id": {"type": "string", "title": "Region", "default": "us"},
+            },
+            "required": ["account_id", "trade_pin"],
+        },
+    },
+    # ── Moomoo ───────────────────────────────────────────────
+    "moomoo": {
+        "type": "moomoo",
+        "name": "Moomoo",
+        "description": "Moomoo Securities — US & SG markets (backed by Futu OpenAPI)",
+        "markets": ["stocks"],
+        "config_schema": {
+            "type": "object",
+            "properties": {
+                "api_host": {"type": "string", "title": "OpenD Host", "default": "127.0.0.1"},
+                "api_port": {"type": "integer", "title": "OpenD Port", "default": 11111},
+                "unlock_password": {"type": "string", "title": "Unlock Password", "format": "password"},
+                "market": {
+                    "type": "string",
+                    "title": "Market",
+                    "enum": ["US", "SG"],
+                    "default": "US",
+                },
+            },
+            "required": ["unlock_password"],
+        },
+    },
+    # ── Tiger Brokers ────────────────────────────────────────
+    "tiger": {
+        "type": "tiger",
+        "name": "Tiger Brokers",
+        "description": "Tiger Brokers — US, HK, SG & AU markets via Tiger OpenAPI",
+        "markets": ["stocks"],
+        "config_schema": {
+            "type": "object",
+            "properties": {
+                "tiger_id": {"type": "string", "title": "Tiger ID"},
+                "account": {"type": "string", "title": "Account Number"},
+                "private_key": {"type": "string", "title": "RSA Private Key", "format": "password"},
+                "server_url": {
+                    "type": "string",
+                    "title": "Server URL",
+                    "default": "https://openapi.tigerbrokers.com",
+                },
+            },
+            "required": ["tiger_id", "account", "private_key"],
+        },
+    },
+    # ── Interactive Brokers ──────────────────────────────────
+    "interactive_brokers": {
+        "type": "interactive_brokers",
+        "name": "Interactive Brokers (IBKR)",
+        "description": "Interactive Brokers — global multi-asset brokerage (stocks, futures, forex, options)",
+        "markets": ["stocks"],
+        "config_schema": {
+            "type": "object",
+            "properties": {
+                "host": {"type": "string", "title": "Host", "default": "127.0.0.1"},
+                "port": {
+                    "type": "integer",
+                    "title": "Port",
+                    "description": "7497 (TWS live), 7496 (IB Gateway paper), 5000 (Client Portal)",
+                    "default": 7497,
+                },
+                "client_id": {"type": "integer", "title": "Client ID", "default": 1},
+                "account_id": {"type": "string", "title": "Account ID (optional)"},
+                "read_only": {"type": "boolean", "title": "Read Only", "default": False},
+            },
+            "required": [],
+        },
+    },
+    # ── Alpaca ───────────────────────────────────────────────
     "alpaca": {
         "type": "alpaca",
         "name": "Alpaca",
-        "description": "Alpaca trading API (US stocks)",
+        "description": "Alpaca Markets — commission-free US stock & crypto trading via REST API",
         "markets": ["stocks"],
         "config_schema": {
             "type": "object",
@@ -64,10 +186,11 @@ BROKER_TYPES: dict[str, dict[str, Any]] = {
             "required": ["api_key", "api_secret"],
         },
     },
+    # ── Binance ──────────────────────────────────────────────
     "binance": {
         "type": "binance",
         "name": "Binance",
-        "description": "Binance cryptocurrency exchange",
+        "description": "Binance cryptocurrency exchange — spot & futures trading",
         "markets": ["crypto"],
         "config_schema": {
             "type": "object",
@@ -75,8 +198,48 @@ BROKER_TYPES: dict[str, dict[str, Any]] = {
                 "api_key": {"type": "string", "title": "API Key"},
                 "api_secret": {"type": "string", "title": "API Secret", "format": "password"},
                 "testnet": {"type": "boolean", "title": "Use Testnet", "default": True},
+                "futures": {"type": "boolean", "title": "Futures Trading", "default": False},
             },
             "required": ["api_key", "api_secret"],
+        },
+    },
+    # ── Bybit ────────────────────────────────────────────────
+    "bybit": {
+        "type": "bybit",
+        "name": "Bybit",
+        "description": "Bybit cryptocurrency exchange — spot, inverse & linear derivatives",
+        "markets": ["crypto"],
+        "config_schema": {
+            "type": "object",
+            "properties": {
+                "api_key": {"type": "string", "title": "API Key"},
+                "api_secret": {"type": "string", "title": "API Secret", "format": "password"},
+                "testnet": {"type": "boolean", "title": "Use Testnet", "default": True},
+                "category": {
+                    "type": "string",
+                    "title": "Category",
+                    "enum": ["spot", "linear", "inverse", "option"],
+                    "default": "spot",
+                },
+            },
+            "required": ["api_key", "api_secret"],
+        },
+    },
+    # ── OKX ──────────────────────────────────────────────────
+    "okx": {
+        "type": "okx",
+        "name": "OKX",
+        "description": "OKX cryptocurrency exchange — spot, margin, futures & perpetual swaps",
+        "markets": ["crypto"],
+        "config_schema": {
+            "type": "object",
+            "properties": {
+                "api_key": {"type": "string", "title": "API Key"},
+                "api_secret": {"type": "string", "title": "API Secret", "format": "password"},
+                "passphrase": {"type": "string", "title": "Passphrase", "format": "password"},
+                "testnet": {"type": "boolean", "title": "Use Testnet", "default": False},
+            },
+            "required": ["api_key", "api_secret", "passphrase"],
         },
     },
 }
@@ -92,64 +255,11 @@ def get_broker_type(type_key: str) -> dict[str, Any] | None:
     return BROKER_TYPES.get(type_key)
 
 
-class BrokerAdapter:
-    """Base broker adapter interface. Specific brokers extend this."""
+# ══════════════════════════════════════════════════════════════════════
+# Adapter Registry & Resolution
+# ══════════════════════════════════════════════════════════════════════
 
-    def __init__(self, connection: BrokerConnection):
-        self.connection = connection
-        self.config = connection.config_json or {}
-
-    async def test_connection(self) -> bool:
-        """Test if the broker connection is valid."""
-        raise NotImplementedError
-
-    async def get_positions(self) -> list[dict]:
-        """Get current positions from the broker."""
-        raise NotImplementedError
-
-    async def get_account_summary(self) -> dict:
-        """Get account summary (balance, buying power, etc.)."""
-        raise NotImplementedError
-
-    async def place_order(self, order: dict) -> dict:
-        """Place an order with the broker."""
-        raise NotImplementedError
-
-    async def get_order_status(self, broker_order_id: str) -> dict:
-        """Check the status of a submitted order."""
-        raise NotImplementedError
-
-
-class PaperBrokerAdapter(BrokerAdapter):
-    """Paper trading broker — simulates trading locally."""
-
-    async def test_connection(self) -> bool:
-        return True
-
-    async def get_positions(self) -> list[dict]:
-        return []
-
-    async def get_account_summary(self) -> dict:
-        return {
-            "total_equity": self.config.get("initial_balance", 100000),
-            "cash_balance": self.config.get("initial_balance", 100000),
-            "buying_power": self.config.get("initial_balance", 100000),
-        }
-
-    async def place_order(self, order: dict) -> dict:
-        commission = float(self.config.get("commission_pct", 0))
-        return {
-            "broker_order_id": f"paper_{order.get('symbol', 'unknown')}_{id(order)}",
-            "status": "filled",
-            "filled_qty": order.get("qty", 0),
-            "avg_fill_price": order.get("price", 0),
-            "commission": commission,
-        }
-
-    async def get_order_status(self, broker_order_id: str) -> dict:
-        return {"broker_order_id": broker_order_id, "status": "filled"}
-
-
+# Static fallback — paper is always available.
 _ADAPTER_REGISTRY: dict[str, type[BrokerAdapter]] = {
     "paper": PaperBrokerAdapter,
 }
@@ -160,8 +270,29 @@ def register_adapter(broker_type: str, adapter_class: type[BrokerAdapter]) -> No
     _ADAPTER_REGISTRY[broker_type] = adapter_class
 
 
+def _ensure_registry_populated() -> None:
+    """Lazily load all available adapter classes into the registry.
+
+    Called once on first ``resolve_adapter`` invocation.
+    """
+    if len(_ADAPTER_REGISTRY) > 1:
+        return  # already populated
+    for bt in BROKER_TYPES:
+        if bt in _ADAPTER_REGISTRY:
+            continue
+        cls = load_adapter_class(bt)
+        if cls is not None:
+            _ADAPTER_REGISTRY[bt] = cls
+            logger.debug("Registered adapter %s for broker_type=%s", cls.__name__, bt)
+
+
 async def resolve_adapter(connection: BrokerConnection) -> BrokerAdapter:
-    """Get the appropriate broker adapter for a connection."""
+    """Get the appropriate broker adapter for a connection.
+
+    Adapters are auto-discovered on first call via dynamic module loading.
+    Falls back to ``PaperBrokerAdapter`` if none found.
+    """
+    _ensure_registry_populated()
     adapter_class = _ADAPTER_REGISTRY.get(connection.broker_type, PaperBrokerAdapter)
     return adapter_class(connection)
 

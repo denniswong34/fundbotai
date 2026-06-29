@@ -2,7 +2,7 @@
 
 import logging
 from datetime import datetime, timezone, timedelta
-from decimal import Decimal
+from decimal import Decimal, ROUND_DOWN
 from typing import Optional
 from uuid import uuid4
 
@@ -22,6 +22,7 @@ from app.models.portfolio import (
 )
 from app.models.broker_connection import BrokerConnection
 from app.services.broker_service import resolve_adapter, get_active_connections
+from app.services.market_config import get_lot_size, get_min_units, round_to_lot
 
 logger = logging.getLogger(__name__)
 
@@ -160,12 +161,18 @@ class PortfolioManager:
         self, portfolio_id: int, data: dict
     ) -> PortfolioHolding:
         """Add a new holding to a portfolio."""
+        market = data.get("market", "US")
+        symbol = data["symbol"].upper()
+        lot_size = data.get("lot_size")
+        if lot_size is None:
+            lot_size = get_lot_size(market, symbol)
         holding = PortfolioHolding(
             portfolio_id=portfolio_id,
-            symbol=data["symbol"].upper(),
+            symbol=symbol,
             asset_type=data.get("asset_type", "stock"),
-            market=data.get("market", "US"),
+            market=market,
             currency=data.get("currency", "USD"),
+            lot_size=lot_size,
             target_weight_pct=Decimal(str(data["target_weight_pct"])),
             current_shares=Decimal(str(data.get("current_shares", 0))),
             avg_cost=Decimal(str(data.get("avg_cost", 0))),
@@ -190,7 +197,8 @@ class PortfolioManager:
             raise HoldingNotFound(f"Holding {holding_id} not found")
 
         for field in ("target_weight_pct", "current_shares", "avg_cost", "current_price",
-                       "market_value", "unrealized_pnl", "unrealized_pnl_pct", "notes", "is_active"):
+                       "market_value", "unrealized_pnl", "unrealized_pnl_pct", "lot_size",
+                       "notes", "is_active"):
             if field in data and data[field] is not None:
                 if field in ("target_weight_pct", "current_shares", "avg_cost",
                              "current_price", "market_value", "unrealized_pnl", "unrealized_pnl_pct"):
@@ -248,12 +256,17 @@ class PortfolioManager:
                 self._recalc_holding_values(h)
                 updated.append(h)
             else:
+                market = hd.get("market", "US")
+                lot_size = hd.get("lot_size")
+                if lot_size is None:
+                    lot_size = get_lot_size(market, symbol)
                 new_h = PortfolioHolding(
                     portfolio_id=portfolio_id,
                     symbol=symbol,
                     asset_type=hd.get("asset_type", "stock"),
-                    market=hd.get("market", "US"),
+                    market=market,
                     currency=hd.get("currency", "USD"),
+                    lot_size=lot_size,
                     target_weight_pct=Decimal(str(hd["target_weight_pct"])),
                     current_shares=Decimal(str(hd.get("current_shares", 0))),
                     avg_cost=Decimal(str(hd.get("avg_cost", 0))),
@@ -289,7 +302,20 @@ class PortfolioManager:
     async def calculate_rebalance_plan(
         self, portfolio_id: int, org_id: int = None
     ) -> dict:
-        """Calculate a rebalance plan (preview) for a portfolio."""
+        """Calculate a rebalance plan (preview) for a portfolio.
+
+        Shares are rounded to valid lot sizes per market rules:
+        - US: 1 share
+        - HK: lot_size varies per stock (default 100)
+        - CN: 100 shares
+        - JP: 100 shares
+        - CRYPTO: varies per symbol (e.g. BTC=0.00001)
+
+        Orders where the calculated quantity is less than the minimum
+        tradable unit are skipped (not enough capital).
+        Sells always round *up* to the nearest whole lot to avoid
+        leaving fractional/incomplete positions.
+        """
         if org_id:
             portfolio = await self.get_portfolio(org_id, portfolio_id)
         else:
@@ -334,20 +360,63 @@ class PortfolioManager:
 
             side = "buy" if diff_value > 0 else "sell"
             price = h.current_price or Decimal("1")
-            diff_shares = _round4(abs(diff_value) / price) if price > 0 else Decimal("0")
+
+            # ── Lot-aware quantity calculation ──────────────
+            lot_size = h.lot_size or 1
+            market = h.market or "US"
+            min_units = get_min_units(market, h.symbol)
+
+            # Raw number of shares before lot rounding
+            raw_shares = abs(diff_value) / price if price > 0 else Decimal("0")
+
+            if market.upper() == "CRYPTO":
+                # Crypto: round down to minimum unit increment
+                if min_units > 0 and raw_shares > 0:
+                    valid_shares = (raw_shares / min_units).quantize(Decimal("1"), rounding=ROUND_DOWN) * min_units
+                else:
+                    valid_shares = raw_shares
+            else:
+                # Integer-lot markets: round to nearest whole lot
+                # Buys: round down (floor) — don't exceed available capital
+                # Sells: round up (ceil) — must clear the full position
+                if side == "sell":
+                    valid_shares = round_to_lot(raw_shares, lot_size, round_down=False)
+                else:
+                    valid_shares = round_to_lot(raw_shares, lot_size, round_down=True)
+
+            # Re-calculate actual value using rounded shares
+            valid_value = _round2(valid_shares * price)
+
+            # Skip if the rounded quantity is less than the minimum tradable unit
+            if valid_shares < min_units:
+                logger.debug(
+                    f"Skipping {h.symbol}: rounded {valid_shares} < min_units {min_units} "
+                    f"(raw={raw_shares}, lot_size={lot_size})"
+                )
+                continue
+
+            # Skip if the rounded shares haven't changed from current holdings
+            current_shares = h.current_shares or Decimal("0")
+            if side == "buy" and valid_shares <= current_shares:
+                continue
+            if side == "sell" and valid_shares <= Decimal("0"):
+                continue
 
             orders.append({
                 "symbol": h.symbol,
+                "market": market,
                 "side": side,
                 "current_weight_pct": current_weight_pct,
                 "target_weight_pct": _pct(normalized_weight / Decimal("100")),
                 "current_value": current_value,
                 "target_value": target_value,
-                "diff_value": abs(diff_value),
-                "diff_shares": diff_shares,
+                "diff_value": valid_value,
+                "diff_shares": valid_shares,
                 "estimated_price": price,
+                "lot_size": lot_size,
+                "min_units": min_units,
             })
-            total_cost += abs(diff_value)
+            total_cost += valid_value
 
         return {
             "portfolio_id": portfolio.id,
@@ -362,7 +431,12 @@ class PortfolioManager:
     async def execute_rebalance(
         self, portfolio_id: int, user_id: int, order_type: str = "market", org_id: int = None
     ) -> list[PortfolioRebalanceOrder]:
-        """Execute a rebalance: create orders with sells first, then buys."""
+        """Execute a rebalance: create orders with sells first, then buys.
+
+        Uses lot-aware share quantities from the calculated plan.
+        Orders whose rounded quantity is below the minimum tradable unit
+        are silently skipped.
+        """
         if org_id:
             portfolio = await self.get_portfolio(org_id, portfolio_id)
         else:
@@ -376,11 +450,20 @@ class PortfolioManager:
         group_id = str(uuid4())
         created_orders = []
 
-        # Sells first
+        # Sells first, then buys
         sell_orders = [o for o in plan["orders"] if o["side"] == "sell"]
         buy_orders = [o for o in plan["orders"] if o["side"] == "buy"]
 
         for idx, order in enumerate(sell_orders + buy_orders):
+            # Safety check: skip if rounded shares < min units
+            min_units = order.get("min_units", Decimal("1"))
+            if order["diff_shares"] < min_units:
+                logger.info(
+                    f"Skipping order for {order['symbol']}: "
+                    f"{order['diff_shares']} < min_units {min_units}"
+                )
+                continue
+
             ot = OrderType(order_type) if order_type in ("market", "limit") else OrderType.MARKET
             limit_price = None
             if ot == OrderType.LIMIT:

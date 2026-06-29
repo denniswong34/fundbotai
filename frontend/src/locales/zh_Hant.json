@@ -44,7 +44,8 @@
     "confirm_delete": "確定要刪除",
     "confirm_password": "確認密碼",
     "slug": "別名",
-    "org_info": "組織資訊"
+    "org_info": "組織資訊",
+    "lot_size": "每手股數"
   },
   "nav": {
     "dashboard": "儀表板",

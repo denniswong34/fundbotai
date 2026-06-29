@@ -30,10 +30,22 @@
                 :items="['US', 'HK', 'CN', 'JP', 'EU']"
                 variant="outlined"
                 density="compact"
+                @update:model-value="onMarketChange"
               />
             </v-col>
           </v-row>
           <v-row>
+            <v-col cols="6">
+              <v-text-field
+                v-model="form.lot_size"
+                label="Lot Size"
+                type="number"
+                variant="outlined"
+                density="compact"
+                :hint="marketHint"
+                persistent-hint
+              />
+            </v-col>
             <v-col cols="6">
               <v-text-field
                 v-model="form.current_shares"
@@ -43,6 +55,8 @@
                 density="compact"
               />
             </v-col>
+          </v-row>
+          <v-row>
             <v-col cols="6">
               <v-text-field
                 v-model="form.current_price"
@@ -52,15 +66,16 @@
                 density="compact"
               />
             </v-col>
+            <v-col cols="6">
+              <v-select
+                v-model="form.asset_type"
+                label="Asset Type"
+                :items="['stock', 'etf', 'crypto']"
+                variant="outlined"
+                density="compact"
+              />
+            </v-col>
           </v-row>
-          <v-select
-            v-model="form.asset_type"
-            label="Asset Type"
-            :items="['stock', 'etf', 'crypto']"
-            variant="outlined"
-            density="compact"
-            class="mb-3"
-          />
         </v-form>
       </v-card-text>
       <v-card-actions>
@@ -73,7 +88,7 @@
 </template>
 
 <script setup>
-import { ref, reactive } from 'vue'
+import { ref, reactive, computed } from 'vue'
 import { usePortfolioStore } from '@/stores/portfolioStore'
 
 const props = defineProps({
@@ -91,8 +106,25 @@ const form = reactive({
   market: 'US',
   current_shares: 0,
   current_price: 0,
+  lot_size: 1,
   asset_type: 'stock',
 })
+
+const marketHint = computed(() => {
+  const hints = {
+    'US': 'Min 1 share',
+    'HK': 'Min 1 lot (100 shares)',
+    'CN': 'Min 100 shares (1 lot)',
+    'JP': 'Min 100 shares (1 lot)',
+    'EU': 'Min 1 share',
+  }
+  return hints[form.market] || 'Min 1 share'
+})
+
+function onMarketChange(market) {
+  const lots = { 'US': 1, 'HK': 100, 'CN': 100, 'JP': 100, 'EU': 1 }
+  form.lot_size = lots[market] || 1
+}
 
 async function submit() {
   saving.value = true
@@ -103,6 +135,7 @@ async function submit() {
     form.symbol = ''
     form.target_weight_pct = 0
     form.market = 'US'
+    form.lot_size = 1
     form.current_shares = 0
     form.current_price = 0
     form.asset_type = 'stock'
