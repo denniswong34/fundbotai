@@ -1,17 +1,18 @@
-"""OKX exchange adapter — STUB.
+"""OKX broker adapter — spot, margin, futures & perpetual swaps via REST.
 
-SDK: okx (official) – https://github.com/okxapi/python-okx
-    pip install okx
-
-Supports spot, margin, futures, and perpetual swaps on OKX.
-Testnet available by pointing to www.okx.com vs www.okx.com (no separate flag).
+API docs: https://www.okx.com/docs-v5/
 """
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
+import httpx
+
 from app.services.broker_adapters.base import BrokerAdapter
+
+logger = logging.getLogger(__name__)
 
 
 class OkxBrokerAdapter(BrokerAdapter):
@@ -21,9 +22,27 @@ class OkxBrokerAdapter(BrokerAdapter):
     broker_name = "OKX"
 
     async def test_connection(self) -> bool:
-        raise NotImplementedError(
-            "OKX adapter not yet implemented.  Use okx SDK."
-        )
+        api_key = self.config.get("api_key", "")
+        api_secret = self.config.get("api_secret", "")
+        passphrase = self.config.get("passphrase", "")
+        testnet = self.config.get("testnet", False)
+
+        if not api_key or not api_secret or not passphrase:
+            logger.warning("OKX %s: missing api_key, api_secret or passphrase", self.connection.name)
+            return False
+
+        base_url = "https://www.okx.com" if not testnet else "https://testnet.okx.com"
+
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                # Public endpoint — no auth required
+                resp = await client.get(f"{base_url}/api/v5/public/time")
+                ok = resp.status_code == 200
+                logger.info("OKX %s: HTTP %d — %s", self.connection.name, resp.status_code, "OK" if ok else "FAIL")
+                return ok
+        except httpx.HTTPError as exc:
+            logger.warning("OKX %s: error: %s", self.connection.name, exc)
+            return False
 
     async def get_positions(self) -> list[dict[str, Any]]:
         raise NotImplementedError

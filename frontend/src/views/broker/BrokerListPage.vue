@@ -25,6 +25,9 @@
             </v-icon>
             <span class="font-weight-bold">{{ conn.name }}</span>
             <v-spacer />
+            <v-chip size="x-small" variant="flat" :color="conn.sandbox ? 'warning' : 'success'" class="mr-1">
+              {{ conn.sandbox ? 'S' : 'L' }}
+            </v-chip>
             <v-chip size="x-small" variant="flat" :color="conn.is_connected ? 'success' : 'error'">
               {{ conn.is_connected ? $t('common.connected') : $t('common.disconnected') }}
             </v-chip>
@@ -52,7 +55,9 @@
               <v-icon left>mdi-flash</v-icon>
               {{ $t('common.test_connection') }}
             </v-btn>
-            <v-spacer />
+            <v-btn icon size="small" variant="text" color="primary" @click="editBroker(conn)">
+              <v-icon>mdi-pencil</v-icon>
+            </v-btn>
             <v-btn icon size="small" variant="text" color="error" @click="confirmDelete(conn)">
               <v-icon>mdi-delete</v-icon>
             </v-btn>
@@ -62,6 +67,7 @@
     </v-row>
 
     <AddBrokerDialog v-model="showAddDialog" @created="loadConnections" />
+    <BrokerFormDialog v-model="showEditDialog" :broker-id="editingId" @saved="loadConnections" />
 
     <!-- Delete Confirm -->
     <v-dialog v-model="deleteDialog" max-width="400">
@@ -84,10 +90,13 @@
 import { ref, onMounted } from 'vue'
 import brokerApi from '@/services/brokerApi'
 import AddBrokerDialog from '@/components/broker/AddBrokerDialog.vue'
+import BrokerFormDialog from '@/components/broker/BrokerFormDialog.vue'
 
 const connections = ref([])
 const loading = ref(false)
 const showAddDialog = ref(false)
+const showEditDialog = ref(false)
+const editingId = ref(null)
 const testingId = ref(null)
 const deleteDialog = ref(false)
 const deleting = ref(null)
@@ -115,6 +124,11 @@ async function testConnection(conn) {
   } finally {
     testingId.value = null
   }
+}
+
+function editBroker(conn) {
+  editingId.value = conn.id
+  showEditDialog.value = true
 }
 
 function confirmDelete(conn) {

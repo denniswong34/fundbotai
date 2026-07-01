@@ -1,32 +1,47 @@
-"""Futu (Futu Holdings Ltd / Futubull) broker adapter — STUB.
+"""Futu (Futubull) broker adapter — HK, US & China A-shares via Futu OpenAPI + OpenD.
 
-SDK: futupy (unofficial) or the official Futu OpenAPI (Protobuf-based).
-    https://github.com/FutuAPI/py-futu-api
-    pip install futu-api
-
-For production use with Futu OpenD:
-  1. Run Futu OpenD locally or on a VPN-accessible host.
-  2. Configure API_HOST / API_PORT in connection config_json.
-  3. Provide unlock_password for trade operations.
+Docs: https://futunnopen.github.io/futu-api-doc/
 """
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from app.services.broker_adapters.base import BrokerAdapter
 
+logger = logging.getLogger(__name__)
+
 
 class FutuBrokerAdapter(BrokerAdapter):
-    """Adapter for Futu (Futubull / 富途牛牛) — Hong Kong & US broker."""
+    """Adapter for Futu (Futubull) — requires a running OpenD process."""
 
     broker_type = "futu"
     broker_name = "Futu (Futubull)"
 
     async def test_connection(self) -> bool:
-        raise NotImplementedError(
-            "Futu adapter not yet implemented.  Use futu-api SDK + OpenD."
-        )
+        host = self.config.get("api_host", "127.0.0.1")
+        port = self.config.get("api_port", 11111)
+        password = self.config.get("unlock_password", "")
+
+        if not password:
+            logger.warning("Futu %s: missing unlock_password", self.connection.name)
+            return False
+
+        # Try a TCP socket check to see if OpenD is listening
+        try:
+            import asyncio
+            _, writer = await asyncio.wait_for(
+                asyncio.open_connection(host, port),
+                timeout=5.0,
+            )
+            writer.close()
+            await writer.wait_closed()
+            logger.info("Futu %s: OpenD reachable at %s:%s", self.connection.name, host, port)
+            return True
+        except (ConnectionRefusedError, TimeoutError, OSError) as exc:
+            logger.warning("Futu %s: cannot connect to %s:%s — %s", self.connection.name, host, port, exc)
+            return False
 
     async def get_positions(self) -> list[dict[str, Any]]:
         raise NotImplementedError

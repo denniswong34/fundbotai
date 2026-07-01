@@ -210,6 +210,21 @@ export const usePortfolioStore = defineStore('portfolio', () => {
     }
   }
 
+  // ── Orders ────────────────────────────────────────────────
+
+  const orders = ref([])
+
+  async function fetchOrders(portfolioId) {
+    try {
+      const res = await portfolioApi.orders(portfolioId)
+      orders.value = res.data
+      return res.data
+    } catch (e) {
+      error.value = e.response?.data?.detail || 'Failed to load orders'
+      throw e
+    }
+  }
+
   async function syncPortfolio(portfolioId) {
     try {
       const res = await portfolioApi.sync(portfolioId)
@@ -217,6 +232,73 @@ export const usePortfolioStore = defineStore('portfolio', () => {
     } catch (e) {
       error.value = e.response?.data?.detail || 'Failed to sync portfolio'
       throw e
+    }
+  }
+
+  // ── Bulk Order Actions ─────────────────────────────────
+
+  async function bulkCancelOrders(portfolioId, orderIds) {
+    try {
+      const res = await portfolioApi.bulkCancelOrders(portfolioId, orderIds)
+      // Refresh orders
+      await fetchOrders(portfolioId)
+      return res.data
+    } catch (e) {
+      error.value = e.response?.data?.detail || 'Failed to cancel orders'
+      throw e
+    }
+  }
+
+  async function replaceOrder(portfolioId, orderId, data) {
+    try {
+      const res = await portfolioApi.replaceOrder(portfolioId, orderId, data)
+      // Refresh orders
+      await fetchOrders(portfolioId)
+      return res.data
+    } catch (e) {
+      error.value = e.response?.data?.detail || 'Failed to replace order'
+      throw e
+    }
+  }
+
+  async function bulkDeleteOrders(portfolioId, orderIds) {
+    try {
+      const res = await portfolioApi.bulkDeleteOrders(portfolioId, orderIds)
+      // Refresh orders
+      await fetchOrders(portfolioId)
+      return res.data
+    } catch (e) {
+      error.value = e.response?.data?.detail || 'Failed to delete orders'
+      throw e
+    }
+  }
+
+  // ── Broker Orders & Trades ─────────────────────────────
+
+  const brokerOrders = ref([])
+  const brokerTrades = ref([])
+
+  async function fetchBrokerOrders(portfolioId) {
+    try {
+      const res = await portfolioApi.brokerOrders(portfolioId)
+      brokerOrders.value = res.data || []
+      return res.data
+    } catch (e) {
+      error.value = e.response?.data?.detail || 'Failed to load broker orders'
+      brokerOrders.value = []
+      return []
+    }
+  }
+
+  async function fetchBrokerTrades(portfolioId) {
+    try {
+      const res = await portfolioApi.brokerTrades(portfolioId)
+      brokerTrades.value = res.data || []
+      return res.data
+    } catch (e) {
+      error.value = e.response?.data?.detail || 'Failed to load broker trades'
+      brokerTrades.value = []
+      return []
     }
   }
 
@@ -246,6 +328,15 @@ export const usePortfolioStore = defineStore('portfolio', () => {
     rebalanceExecute,
     fetchPerformance,
     fetchAllocation,
+    fetchOrders,
     syncPortfolio,
+    orders,
+    bulkCancelOrders,
+    replaceOrder,
+    bulkDeleteOrders,
+    brokerOrders,
+    brokerTrades,
+    fetchBrokerOrders,
+    fetchBrokerTrades,
   }
 })

@@ -77,6 +77,7 @@ async def create_connection(
         name=data.name,
         broker_type=data.broker_type,
         market_type=MarketType(data.market_type) if data.market_type else MarketType.STOCKS,
+        sandbox=data.sandbox if data.sandbox is not None else True,
         config_json=data.config_json or {},
         sub_account_id=data.sub_account_id,
         is_active=True,
@@ -84,6 +85,16 @@ async def create_connection(
     db.add(connection)
     await db.commit()
     await db.refresh(connection)
+
+    # Auto-connect paper brokers (no real credentials needed)
+    if data.broker_type == "paper":
+        from app.services.broker_service import test_connection as test_broker_connection
+        test_result = await test_broker_connection(connection)
+        if test_result:
+            connection.is_connected = True
+            await db.commit()
+            await db.refresh(connection)
+
     return connection
 
 
@@ -114,6 +125,8 @@ async def update_connection(
         connection.name = data.name
     if data.market_type is not None:
         connection.market_type = MarketType(data.market_type)
+    if data.sandbox is not None:
+        connection.sandbox = data.sandbox
     if data.config_json is not None:
         connection.config_json = data.config_json
     if data.sub_account_id is not None:

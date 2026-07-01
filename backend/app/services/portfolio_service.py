@@ -497,7 +497,12 @@ class PortfolioManager:
     async def execute_rebalance(
         self, portfolio_id: int, user_id: int, order_type: str = "market", org_id: int = None
     ) -> list[PortfolioRebalanceOrder]:
-        """Execute a rebalance: create orders with sells first, then buys.
+        """Execute a rebalance: submit orders to the broker, then store results.
+
+        For each order in the calculated plan:
+          1. If a broker is linked, submit via the broker adapter's place_order()
+          2. Store the result (broker_order_id, status, etc.) in the local DB
+          3. If no broker or broker submission fails, store as PENDING for manual handling
 
         Uses lot-aware share quantities from the calculated plan.
         Orders whose rounded quantity is below the minimum tradable unit
@@ -516,11 +521,34 @@ class PortfolioManager:
         group_id = str(uuid4())
         created_orders = []
 
-        # Sells first, then buys
-        sell_orders = [o for o in plan["orders"] if o["side"] == "sell"]
-        buy_orders = [o for o in plan["orders"] if o["side"] == "buy"]
+        # Resolve broker adapter if linked
+        broker_adapter = None
+        if portfolio.broker_connection_id:
+            try:
+                from sqlalchemy import select
+                from app.models.broker_connection import BrokerConnection
+                result = await self.db.execute(
+                    select(BrokerConnection).where(
+                        BrokerConnection.id == portfolio.broker_connection_id,
+                        BrokerConnection.is_active == True,
+                    )
+                )
+                conn = result.scalar_one_or_none()
+                if conn:
+                    from app.services.broker_service import resolve_adapter
+                    broker_adapter = await resolve_adapter(conn)
+                    # Ensure connected
+                    if not await broker_adapter.test_connection():
+                        logger.warning("Portfolio %d: broker %s not reachable, orders will be PENDING", portfolio_id, conn.name)
+                        broker_adapter = None
+            except Exception as e:
+                logger.warning("Portfolio %d: broker resolve error: %s", portfolio_id, e)
 
-        for idx, order in enumerate(sell_orders + buy_orders):
+        # Sells first, then buys
+        sell_orders_nested = [o for o in plan["orders"] if o["side"] == "sell"]
+        buy_orders_nested = [o for o in plan["orders"] if o["side"] == "buy"]
+
+        for idx, order in enumerate(sell_orders_nested + buy_orders_nested):
             # Safety check: skip if rounded shares < min units
             min_units = order.get("min_units", Decimal("1"))
             if order["diff_shares"] < min_units:
@@ -550,6 +578,46 @@ class PortfolioManager:
                 limit_price=limit_price,
                 status=OrderStatus.PENDING,
             )
+
+            # Submit to broker if adapter available
+            if broker_adapter:
+                try:
+                    broker_order = {
+                        "symbol": order["symbol"],
+                        "side": order["side"].upper(),
+                        "type": order_type,
+                        "qty": int(order["diff_shares"]),
+                        "time_in_force": "DAY",
+                    }
+                    if limit_price:
+                        broker_order["price"] = float(limit_price)
+
+                    broker_result = await broker_adapter.place_order(broker_order)
+                    # Extract broker order ID
+                    broker_order_id = (
+                        broker_result.get("broker_order_id")
+                        or broker_result.get("order_id")
+                        or broker_result.get("client_order_id")
+                        or broker_result.get("data", {}).get("order_id")
+                        or broker_result.get("data", {}).get("client_order_id")
+                    )
+                    if broker_order_id:
+                        db_order.broker_order_id = broker_order_id
+                        db_order.status = OrderStatus.SUBMITTED
+                        logger.info("Portfolio %d: submitted %s %s -> broker_id=%s",
+                                    portfolio_id, order["side"], order["symbol"], broker_order_id)
+                    else:
+                        # Order submitted but no ID returned - check for errors
+                        error_msg = broker_result.get("msg", broker_result.get("message", str(broker_result)[:200]))
+                        if "success" in broker_result and not broker_result["success"]:
+                            db_order.error_message = error_msg
+                        logger.warning("Portfolio %d: %s %s broker result: %s",
+                                       portfolio_id, order["side"], order["symbol"], error_msg)
+                except Exception as e:
+                    db_order.error_message = f"Broker submit error: {e}"
+                    logger.error("Portfolio %d: %s %s submit failed: %s",
+                                 portfolio_id, order["side"], order["symbol"], e)
+
             self.db.add(db_order)
             created_orders.append(db_order)
 
@@ -561,6 +629,347 @@ class PortfolioManager:
         for o in created_orders:
             await self.db.refresh(o)
         return created_orders
+
+    # ── Rebalance Orders ─────────────────────────────────────
+
+    async def get_rebalance_orders(
+        self, portfolio_id: int, org_id: int
+    ) -> list[PortfolioRebalanceOrder]:
+        """Get all rebalance orders for a portfolio, most recent first.
+
+        If the portfolio has a linked broker, also sync order statuses
+        from the broker's API to keep local records up to date.
+        """
+        # First, try to sync statuses from broker
+        try:
+            result = await self.db.execute(
+                select(Portfolio).where(
+                    Portfolio.id == portfolio_id,
+                    Portfolio.org_id == org_id,
+                )
+            )
+            portfolio = result.scalar_one_or_none()
+            if portfolio and portfolio.broker_connection_id:
+                await self._sync_order_statuses_from_broker(portfolio)
+        except Exception as e:
+            logger.warning("Portfolio %d: broker order sync failed: %s", portfolio_id, e)
+
+        # Now fetch from local DB
+        result = await self.db.execute(
+            select(PortfolioRebalanceOrder)
+            .where(
+                PortfolioRebalanceOrder.portfolio_id == portfolio_id,
+                PortfolioRebalanceOrder.org_id == org_id,
+            )
+            .order_by(PortfolioRebalanceOrder.created_at.desc())
+        )
+        return list(result.scalars().all())
+
+    async def _sync_order_statuses_from_broker(
+        self, portfolio: Portfolio
+    ) -> None:
+        """Update local rebalance order statuses from the broker's API."""
+        if not portfolio.broker_connection_id:
+            return
+        try:
+            from app.models.broker_connection import BrokerConnection
+            result = await self.db.execute(
+                select(BrokerConnection).where(
+                    BrokerConnection.id == portfolio.broker_connection_id,
+                    BrokerConnection.is_active == True,
+                )
+            )
+            conn = result.scalar_one_or_none()
+            if not conn:
+                return
+            from app.services.broker_service import resolve_adapter
+            adapter = await resolve_adapter(conn)
+            if not await adapter.test_connection():
+                return
+
+            # Get open orders from broker
+            try:
+                open_orders = await adapter.get_open_orders()
+            except (AttributeError, NotImplementedError):
+                open_orders = []
+            # Get order history from broker
+            try:
+                history = await adapter.get_order_history()
+            except (AttributeError, NotImplementedError):
+                history = []
+
+            all_broker_orders = {}
+            for o in (open_orders or []) + (history or []):
+                oid = o.get("order_id") or o.get("client_order_id")
+                if oid:
+                    all_broker_orders[oid] = o
+
+            if not all_broker_orders:
+                return
+
+            # Find matching local orders by broker_order_id
+            broker_ids = list(all_broker_orders.keys())
+            result = await self.db.execute(
+                select(PortfolioRebalanceOrder).where(
+                    PortfolioRebalanceOrder.broker_order_id.in_(broker_ids),
+                )
+            )
+            local_orders = list(result.scalars().all())
+
+            for local in local_orders:
+                broker_data = all_broker_orders.get(local.broker_order_id)
+                if not broker_data:
+                    continue
+                broker_status = (broker_data.get("status") or "").lower()
+                # Map broker status to local OrderStatus
+                status_map = {
+                    "new": OrderStatus.PENDING,
+                    "submitted": OrderStatus.SUBMITTED,
+                    "partiallyfilled": OrderStatus.PARTIALLY_FILLED,
+                    "filled": OrderStatus.FILLED,
+                    "cancelled": OrderStatus.CANCELLED,
+                    "canceled": OrderStatus.CANCELLED,
+                    "rejected": OrderStatus.REJECTED,
+                    "failed": OrderStatus.FAILED,
+                }
+                new_status = status_map.get(broker_status.replace(" ", ""))
+                if new_status and new_status != local.status:
+                    local.status = new_status
+                # Update fill info
+                filled = broker_data.get("filled_quantity") or broker_data.get("filled_qty")
+                if filled:
+                    local.filled_qty = Decimal(str(filled))
+                avg_price = broker_data.get("avg_price") or broker_data.get("avg_fill_price")
+                if avg_price:
+                    local.avg_fill_price = Decimal(str(avg_price))
+            if local_orders:
+                await self.db.commit()
+                logger.info("Portfolio %d: synced %d order statuses from broker", portfolio.id, len(local_orders))
+
+        except Exception as e:
+            logger.warning("Portfolio %d: broker sync error: %s", portfolio.id, e)
+
+    # ── Bulk Order Actions ────────────────────────────────────
+
+    async def cancel_orders(
+        self, portfolio_id: int, order_ids: list[int], org_id: int
+    ) -> dict:
+        """Cancel one or more open orders.
+
+        For each order:
+          1. If a broker is linked and the order has a broker_order_id,
+             request cancellation via the broker adapter.
+          2. Update local DB status to CANCELLED.
+
+        Returns a summary dict with success/failure counts.
+        """
+        result = await self.db.execute(
+            select(PortfolioRebalanceOrder).where(
+                PortfolioRebalanceOrder.id.in_(order_ids),
+                PortfolioRebalanceOrder.portfolio_id == portfolio_id,
+                PortfolioRebalanceOrder.org_id == org_id,
+            )
+        )
+        orders = list(result.scalars().all())
+        if not orders:
+            return {"success": 0, "failed": 0, "errors": ["No orders found"]}
+
+        # Resolve broker adapter if linked
+        broker_adapter = await self._resolve_portfolio_broker(portfolio_id, org_id)
+
+        succeeded = 0
+        failed = 0
+        errors = []
+
+        for order in orders:
+            if order.status in (OrderStatus.FILLED, OrderStatus.CANCELLED, OrderStatus.REJECTED):
+                errors.append(f"Order {order.id} ({order.symbol}): already {order.status.value}")
+                failed += 1
+                continue
+
+            if broker_adapter and order.broker_order_id:
+                try:
+                    broker_result = await broker_adapter.cancel_order(order.broker_order_id)
+                    if broker_result.get("success", True):
+                        order.status = OrderStatus.CANCELLED
+                        succeeded += 1
+                    else:
+                        # Broker cancel failed — still mark as cancelled locally
+                        order.status = OrderStatus.CANCELLED
+                        order.error_message = f"Broker cancel returned: {broker_result.get('msg', 'unknown')}"
+                        succeeded += 1  # Local state is correct even if broker was flaky
+                except Exception as e:
+                    order.status = OrderStatus.CANCELLED
+                    order.error_message = f"Cancel error: {e}"
+                    succeeded += 1  # Force-cancelled locally
+            else:
+                # No broker: just update local status
+                order.status = OrderStatus.CANCELLED
+                succeeded += 1
+
+        await self.db.commit()
+        return {"success": succeeded, "failed": failed, "errors": errors if errors else None}
+
+    async def replace_order(
+        self, portfolio_id: int, order_id: int, org_id: int,
+        new_order_type: str = "market", new_limit_price: Decimal = None,
+    ) -> PortfolioRebalanceOrder:
+        """Replace (cancel + replace) an existing open order.
+
+        1. Cancel the old order at the broker (if linked + has broker_order_id).
+        2. Place a new order with the updated type/price.
+        3. Update the original order's status to CANCELLED.
+        4. Create a new PortfolioRebalanceOrder record for the replacement.
+
+        Returns the *new* order record.
+        """
+        result = await self.db.execute(
+            select(PortfolioRebalanceOrder).where(
+                PortfolioRebalanceOrder.id == order_id,
+                PortfolioRebalanceOrder.portfolio_id == portfolio_id,
+                PortfolioRebalanceOrder.org_id == org_id,
+            )
+        )
+        old_order = result.scalar_one_or_none()
+        if old_order is None:
+            raise PortfolioNotFound(f"Order {order_id} not found")
+
+        if old_order.status in (OrderStatus.FILLED, OrderStatus.CANCELLED, OrderStatus.REJECTED):
+            raise PortfolioError(
+                f"Order {order_id} ({old_order.symbol}): cannot replace a {old_order.status.value} order"
+            )
+
+        broker_adapter = await self._resolve_portfolio_broker(portfolio_id, org_id)
+
+        # 1. Cancel the old order at broker
+        if broker_adapter and old_order.broker_order_id:
+            try:
+                cancel_result = await broker_adapter.cancel_order(old_order.broker_order_id)
+                if not cancel_result.get("success", True):
+                    logger.warning("Order %d: broker cancel returned: %s",
+                                   order_id, cancel_result.get("msg", "unknown"))
+            except Exception as e:
+                logger.warning("Order %d: broker cancel error: %s", order_id, e)
+
+        old_order.status = OrderStatus.CANCELLED
+        old_order.error_message = f"Replaced by new order"
+
+        # 2. Place the new order
+        ot = OrderType(new_order_type) if new_order_type in ("market", "limit") else OrderType.MARKET
+        new_qty = old_order.target_qty
+        new_value = old_order.target_value
+        limit_price = None
+
+        if ot == OrderType.LIMIT:
+            limit_price = new_limit_price or old_order.limit_price or old_order.target_value / old_order.target_qty if old_order.target_qty > 0 else None
+
+        # Build the new order payload for the broker
+        broker_order_payload = {
+            "symbol": old_order.symbol,
+            "side": old_order.side.value.upper(),
+            "type": ot.value,
+            "qty": int(old_order.target_qty),
+            "time_in_force": "DAY",
+        }
+        if limit_price:
+            broker_order_payload["price"] = float(limit_price)
+
+        new_db_order = PortfolioRebalanceOrder(
+            portfolio_id=portfolio_id,
+            user_id=old_order.user_id,
+            org_id=org_id,
+            rebalance_group_id=old_order.rebalance_group_id,
+            sequence=old_order.sequence,
+            symbol=old_order.symbol,
+            side=old_order.side,
+            order_type=ot,
+            target_qty=new_qty,
+            target_value=new_value,
+            limit_price=limit_price,
+            status=OrderStatus.PENDING,
+        )
+
+        # Submit to broker if adapter available
+        if broker_adapter:
+            try:
+                broker_result = await broker_adapter.place_order(broker_order_payload)
+                broker_order_id = (
+                    broker_result.get("broker_order_id")
+                    or broker_result.get("order_id")
+                    or broker_result.get("client_order_id")
+                    or broker_result.get("data", {}).get("order_id")
+                )
+                if broker_order_id:
+                    new_db_order.broker_order_id = broker_order_id
+                    new_db_order.status = OrderStatus.SUBMITTED
+            except Exception as e:
+                new_db_order.error_message = f"Replace submit error: {e}"
+
+        self.db.add(new_db_order)
+        await self.db.commit()
+        await self.db.refresh(new_db_order)
+        return new_db_order
+
+    async def delete_orders(
+        self, portfolio_id: int, order_ids: list[int], org_id: int
+    ) -> dict:
+        """Hard-delete order records from the local DB.
+
+        Any order can be deleted — it is purely a local DB cleanup operation.
+        For orders still open at the broker, cancel them first via the
+        bulk-cancel endpoint to keep the broker in sync.
+        """
+        result = await self.db.execute(
+            select(PortfolioRebalanceOrder).where(
+                PortfolioRebalanceOrder.id.in_(order_ids),
+                PortfolioRebalanceOrder.portfolio_id == portfolio_id,
+                PortfolioRebalanceOrder.org_id == org_id,
+            )
+        )
+        orders = list(result.scalars().all())
+        if not orders:
+            return {"success": 0, "failed": 0, "errors": ["No orders found"]}
+
+        succeeded = 0
+        errors = []
+
+        for order in orders:
+            await self.db.delete(order)
+            succeeded += 1
+
+        await self.db.commit()
+        return {"success": succeeded, "failed": 0, "errors": errors if errors else None}
+
+    async def _resolve_portfolio_broker(
+        self, portfolio_id: int, org_id: int
+    ):
+        """Resolve the broker adapter for a portfolio, or None."""
+        result = await self.db.execute(
+            select(Portfolio).where(
+                Portfolio.id == portfolio_id,
+                Portfolio.org_id == org_id,
+            )
+        )
+        portfolio = result.scalar_one_or_none()
+        if not portfolio or not portfolio.broker_connection_id:
+            return None
+        result = await self.db.execute(
+            select(BrokerConnection).where(
+                BrokerConnection.id == portfolio.broker_connection_id,
+                BrokerConnection.is_active == True,
+            )
+        )
+        conn = result.scalar_one_or_none()
+        if not conn:
+            return None
+        try:
+            from app.services.broker_service import resolve_adapter
+            adapter = await resolve_adapter(conn)
+            if await adapter.test_connection():
+                return adapter
+        except Exception as e:
+            logger.warning("Portfolio %d: broker resolve error: %s", portfolio_id, e)
+        return None
 
     # ── Sync from Broker ────────────────────────────────────
 
@@ -613,9 +1022,6 @@ class PortfolioManager:
             portfolio.last_synced_at = datetime.now(timezone.utc)
             await self.db.commit()
 
-            # Create a performance snapshot
-            await self._record_performance_snapshot(portfolio_id)
-
             return {"status": "success", "positions_synced": len(positions)}
 
         except Exception as e:
@@ -642,6 +1048,9 @@ class PortfolioManager:
             portfolio.total_pnl_pct = _pct((total_value - total_cost) / total_cost)
         else:
             portfolio.total_pnl_pct = Decimal("0")
+
+        # Record a performance snapshot whenever stats are recalculated
+        await self._record_performance_snapshot(portfolio_id)
 
     async def _record_performance_snapshot(self, portfolio_id: int) -> None:
         """Record today's performance snapshot for charting."""
@@ -710,6 +1119,24 @@ class PortfolioManager:
             .order_by(PortfolioPerformanceSnapshot.snapshot_date.asc())
         )
         snapshots = result.scalars().all()
+        if not snapshots:
+            # Fallback: create a single data point from current portfolio values
+            result2 = await self.db.execute(
+                select(Portfolio).where(Portfolio.id == portfolio_id)
+            )
+            pf = result2.scalar_one_or_none()
+            if pf:
+                snapshots = [PortfolioPerformanceSnapshot(
+                    portfolio_id=portfolio_id,
+                    org_id=pf.org_id,
+                    snapshot_date=datetime.now(timezone.utc),
+                    total_value=pf.total_value or Decimal("0"),
+                    total_pnl=pf.total_pnl or Decimal("0"),
+                    total_return_pct=pf.total_pnl_pct or Decimal("0"),
+                    daily_pnl=Decimal("0"),
+                    daily_return_pct=Decimal("0"),
+                )]
+
         return [
             {
                 "date": s.snapshot_date.strftime("%Y-%m-%d") if s.snapshot_date else "",
@@ -769,3 +1196,77 @@ class PortfolioManager:
             "total_pnl_pct": total_pnl_pct,
             "active_count": active_count,
         }
+
+    # ── Broker Orders & Trades ───────────────────────────────
+
+    async def get_broker_open_orders(
+        self, portfolio_id: int, org_id: int
+    ) -> list[dict]:
+        """Fetch live open orders from the broker linked to this portfolio.
+
+        Returns a normalized list of open orders.
+        Returns empty list if no broker is linked or the adapter doesn't
+        implement get_open_orders().
+        """
+        adapter = await self._resolve_portfolio_broker(portfolio_id, org_id)
+        if not adapter:
+            return []
+        try:
+            if not hasattr(adapter, "get_open_orders"):
+                return []
+            orders = await adapter.get_open_orders()
+            return self._normalize_broker_orders(orders or [])
+        except (AttributeError, NotImplementedError):
+            return []
+        except Exception as e:
+            logger.warning("Portfolio %d: get_open_orders failed: %s", portfolio_id, e)
+            return []
+
+    async def get_broker_trades(
+        self, portfolio_id: int, org_id: int
+    ) -> list[dict]:
+        """Fetch trade history from the broker linked to this portfolio.
+
+        Returns a normalized list of filled/completed trades.
+        Returns empty list if no broker is linked or the adapter doesn't
+        implement get_order_history().
+        """
+        adapter = await self._resolve_portfolio_broker(portfolio_id, org_id)
+        if not adapter:
+            return []
+        try:
+            if not hasattr(adapter, "get_order_history"):
+                return []
+            history = await adapter.get_order_history()
+            normalized = self._normalize_broker_orders(history or [])
+            # Only return filled/completed trades
+            return [t for t in normalized if t.get("status") in ("filled", "completed", "Filled", "Completed")]
+        except (AttributeError, NotImplementedError):
+            return []
+        except Exception as e:
+            logger.warning("Portfolio %d: get_order_history failed: %s", portfolio_id, e)
+            return []
+
+    @staticmethod
+    def _normalize_broker_orders(orders: list[dict]) -> list[dict]:
+        """Normalize broker-specific order formats into a standard shape.
+
+        Handles both the Webull HK format and Paper adapter format.
+        """
+        normalized = []
+        for o in orders:
+            normalized.append({
+                "id": o.get("id") or o.get("order_id") or o.get("broker_order_id", ""),
+                "symbol": o.get("symbol", "").upper(),
+                "side": (o.get("side") or "buy").lower(),
+                "order_type": (o.get("order_type") or o.get("type") or "market").lower(),
+                "qty": float(o.get("qty") or o.get("quantity") or o.get("target_qty") or 0),
+                "filled_qty": float(o.get("filled_qty") or o.get("filled_quantity") or 0),
+                "price": float(o.get("price") or o.get("limit_price") or 0),
+                "avg_fill_price": float(o.get("avg_fill_price") or o.get("avg_price") or 0),
+                "status": (o.get("status") or "unknown").lower(),
+                "broker_order_id": o.get("order_id") or o.get("broker_order_id") or o.get("client_order_id", ""),
+                "created_at": o.get("created_at") or o.get("create_time") or "",
+                "source": "broker",
+            })
+        return normalized

@@ -7,7 +7,7 @@ class Settings(BaseSettings):
     APP_VERSION: str = "0.1.0"
 
     # Database
-    DATABASE_URL: str = "mysql+aiomysql://fundport:fundport_2024@localhost:3309/fundport"
+    DATABASE_URL: str = "mysql+aiomysql://fundbotai:fundbotai_2024@127.0.0.1:3308/fundbotai"
 
     # JWT
     JWT_SECRET: str = "change-me-in-production"

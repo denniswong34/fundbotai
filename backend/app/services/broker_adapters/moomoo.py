@@ -1,29 +1,46 @@
-"""Moomoo (FutuSG / MooMoo) broker adapter — STUB.
+"""Moomoo broker adapter — US & SG markets via Futu OpenAPI (same backend as Futu).
 
-SDK: futu-api (same underlying Futu OpenAPI as Futu).
-    pip install futu-api
-
-Moomoo is a Futu-backed broker targeting US & SG markets.
-Use the same OpenD setup as the Futu adapter.
+Docs: https://www.moomoo.com/download/OpenAPI
 """
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from app.services.broker_adapters.base import BrokerAdapter
 
+logger = logging.getLogger(__name__)
+
 
 class MoomooBrokerAdapter(BrokerAdapter):
-    """Adapter for Moomoo — US, SG & HK markets via Futu OpenAPI."""
+    """Adapter for Moomoo — US & SG markets, backed by Futu OpenAPI."""
 
     broker_type = "moomoo"
     broker_name = "Moomoo"
 
     async def test_connection(self) -> bool:
-        raise NotImplementedError(
-            "Moomoo adapter not yet implemented.  Shares the futu-api SDK."
-        )
+        host = self.config.get("api_host", "127.0.0.1")
+        port = self.config.get("api_port", 11111)
+        password = self.config.get("unlock_password", "")
+
+        if not password:
+            logger.warning("Moomoo %s: missing unlock_password", self.connection.name)
+            return False
+
+        try:
+            import asyncio
+            _, writer = await asyncio.wait_for(
+                asyncio.open_connection(host, port),
+                timeout=5.0,
+            )
+            writer.close()
+            await writer.wait_closed()
+            logger.info("Moomoo %s: OpenD reachable at %s:%s", self.connection.name, host, port)
+            return True
+        except (ConnectionRefusedError, TimeoutError, OSError) as exc:
+            logger.warning("Moomoo %s: cannot connect to %s:%s — %s", self.connection.name, host, port, exc)
+            return False
 
     async def get_positions(self) -> list[dict[str, Any]]:
         raise NotImplementedError

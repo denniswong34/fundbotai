@@ -4,7 +4,7 @@
 
     <v-row>
       <v-col cols="12" md="6">
-        <v-card class="glass-card" elevation="0" class="mb-6">
+        <v-card class="glass-card mb-6" elevation="0">
           <v-card-title>{{ $t('org.org_info') }}</v-card-title>
           <v-card-text v-if="auth.organization">
             <v-row>

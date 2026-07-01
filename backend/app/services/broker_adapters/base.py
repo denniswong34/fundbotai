@@ -76,6 +76,31 @@ class BrokerAdapter(abc.ABC):
             broker_order_id, status (cancelled / cancel_rejected)
         """
 
+    async def replace_order(
+        self, broker_order_id: str, new_order: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Replace an existing open order with a new one.
+
+        Default implementation: cancel the old order, then place the new one.
+        Subclasses may override with a broker-native modify endpoint for
+        atomic replace (e.g. Webull HK's modify API, IBKR's what-if).
+
+        Args:
+            broker_order_id: The broker's ID of the order to replace.
+            new_order: The new order params (symbol, side, type, qty, price, etc.)
+
+        Returns:
+            dict with at minimum: success, broker_order_id (of new order), status
+        """
+        # Default: cancel + place
+        cancel_result = await self.cancel_order(broker_order_id)
+        if not cancel_result.get("success", False):
+            return {
+                "success": False,
+                "msg": f"Cancel failed before replace: {cancel_result.get('msg', 'unknown')}",
+            }
+        return await self.place_order(new_order)
+
     # ── Market data ──────────────────────────────────────────
 
     @abc.abstractmethod

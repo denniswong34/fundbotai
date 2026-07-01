@@ -76,32 +76,38 @@ BROKER_TYPES: dict[str, dict[str, Any]] = {
     "webull_hk": {
         "type": "webull_hk",
         "name": "Webull Hong Kong",
-        "description": "Webull Securities Limited — HKEX stocks & ETFs",
+        "description": "Webull Securities Limited — HKEX stocks & ETFs. Supports OAuth (App Key/Secret) for API trading or direct login (Account/PIN).",
         "markets": ["stocks"],
         "config_schema": {
             "type": "object",
             "properties": {
-                "account_id": {"type": "string", "title": "Account ID"},
-                "trade_pin": {"type": "string", "title": "Trade PIN", "format": "password"},
+                "app_key": {"type": "string", "title": "App Key", "description": "OAuth App Key from Webull Open Platform"},
+                "app_secret": {"type": "string", "title": "App Secret", "format": "password", "description": "OAuth App Secret from Webull Open Platform"},
+                "account_id": {"type": "string", "title": "Account ID", "description": "Your Webull account number (for direct login)"},
+                "trade_pin": {"type": "string", "title": "Trade PIN", "format": "password", "description": "6-digit trading PIN (for direct login)"},
                 "region_id": {"type": "string", "title": "Region", "default": "hk"},
+                "server_url": {"type": "string", "title": "Server URL", "default": "https://api.sandbox.webull.hk", "description": "API base URL. Sandbox: https://api.sandbox.webull.hk, Production: https://api.webull.hk"},
             },
-            "required": ["account_id", "trade_pin"],
+            "required": [],
         },
     },
     # ── Webull US ────────────────────────────────────────────
     "webull_us": {
         "type": "webull_us",
         "name": "Webull US",
-        "description": "Webull Financial LLC — US stocks, ETFs & options",
+        "description": "Webull Financial LLC — US stocks, ETFs & options. Supports OAuth (App Key/Secret) for API trading or direct login (Account/PIN).",
         "markets": ["stocks"],
         "config_schema": {
             "type": "object",
             "properties": {
+                "app_key": {"type": "string", "title": "App Key", "description": "OAuth App Key from Webull Open Platform"},
+                "app_secret": {"type": "string", "title": "App Secret", "format": "password"},
                 "account_id": {"type": "string", "title": "Account ID"},
                 "trade_pin": {"type": "string", "title": "Trade PIN", "format": "password"},
                 "region_id": {"type": "string", "title": "Region", "default": "us"},
+                "server_url": {"type": "string", "title": "Server URL", "default": "https://api.webull.com", "description": "API base URL"},
             },
-            "required": ["account_id", "trade_pin"],
+            "required": [],
         },
     },
     # ── Moomoo ───────────────────────────────────────────────

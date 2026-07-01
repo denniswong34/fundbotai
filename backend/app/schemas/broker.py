@@ -10,6 +10,7 @@ class BrokerConnectionCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
     broker_type: str = Field(..., min_length=1, max_length=50)
     market_type: str = Field(default="stocks", pattern=r"^(stocks|crypto|both)$")
+    sandbox: bool = Field(default=True, description="True=sandbox/testnet, False=live/production")
     config_json: Optional[dict] = Field(default_factory=dict)
     sub_account_id: Optional[str] = None
 
@@ -17,6 +18,7 @@ class BrokerConnectionCreate(BaseModel):
 class BrokerConnectionUpdate(BaseModel):
     name: Optional[str] = Field(None, min_length=1, max_length=100)
     market_type: Optional[str] = None
+    sandbox: Optional[bool] = None
     config_json: Optional[dict] = None
     sub_account_id: Optional[str] = None
     is_active: Optional[bool] = None
@@ -30,6 +32,7 @@ class BrokerConnectionResponse(BaseModel):
     broker_type: str
     market_type: str
     is_active: bool
+    sandbox: bool
     config_json: Optional[dict] = None
     sub_account_id: Optional[str] = None
     is_connected: bool

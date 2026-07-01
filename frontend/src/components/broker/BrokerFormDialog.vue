@@ -1,7 +1,7 @@
 <template>
   <v-dialog :model-value="modelValue" @update:model-value="$emit('update:modelValue', $event)" max-width="600" persistent>
     <v-card class="glass-card">
-      <v-card-title>{{ $t('common.add_broker') }}</v-card-title>
+      <v-card-title>{{ isEdit ? $t('common.edit_broker') : $t('common.add_broker') }}</v-card-title>
       <v-card-text>
         <v-form ref="formRef" @submit.prevent="submit">
 
@@ -28,6 +28,7 @@
             class="mb-3"
             @update:model-value="onTypeChange"
             return-object
+            :disabled="isEdit"
           />
 
           <!-- Market Type -->
@@ -124,13 +125,14 @@
           :loading="testing"
           @click="testNow"
           class="mr-auto"
+          :disabled="isEdit"
         >
           <v-icon left>mdi-flash</v-icon>
           {{ $t('common.test_connection') }}
         </v-btn>
         <v-spacer />
         <v-btn variant="text" @click="close">{{ $t('common.cancel') }}</v-btn>
-        <v-btn color="primary" :loading="saving" @click="submit">{{ $t('common.save') }}</v-btn>
+        <v-btn color="primary" :loading="saving" @click="submit">{{ isEdit ? $t('common.save') : $t('common.save') }}</v-btn>
       </v-card-actions>
     </v-card>
   </v-dialog>
@@ -142,17 +144,20 @@ import brokerApi from '@/services/brokerApi'
 
 const props = defineProps({
   modelValue: Boolean,
+  brokerId: { type: [Number, String], default: null },
 })
 
-const emit = defineEmits(['update:modelValue', 'created'])
+const emit = defineEmits(['update:modelValue', 'saved'])
 
 const formRef = ref(null)
 const brokerTypes = ref([])
 const selectedType = ref(null)
 const saving = ref(false)
 const testing = ref(false)
+const loading = ref(false)
 
-// Use ref() instead of reactive() for proper Vuetify v-model reactivity
+const isEdit = computed(() => !!props.brokerId)
+
 const form = ref({
   name: '',
   broker_type: '',
@@ -183,7 +188,6 @@ const dynamicFields = computed(() => {
 })
 
 function onTypeChange(item) {
-  // item is the whole broker type object when return-object is set
   selectedType.value = item || null
   // Reset config for new type
   form.value.config_json = {}
@@ -204,13 +208,37 @@ async function loadTypes() {
   }
 }
 
+async function loadExisting() {
+  if (!props.brokerId) return
+  loading.value = true
+  try {
+    const res = await brokerApi.get(props.brokerId)
+    const data = res.data
+    form.value = {
+      name: data.name || '',
+      broker_type: data.broker_type || '',
+      market_type: data.market_type || 'stocks',
+      sandbox: data.sandbox !== false,
+      config_json: data.config_json || {},
+    }
+    // Set the selected type schema to match the broker's type
+    const match = brokerTypes.value.find(t => t.type === data.broker_type)
+    if (match) {
+      selectedType.value = match
+    }
+  } catch (e) {
+    console.error('Failed to load broker:', e)
+  } finally {
+    loading.value = false
+  }
+}
+
 async function testNow() {
   testing.value = true
   try {
     const res = await brokerApi.create({ ...form.value })
     const testRes = await brokerApi.test(res.data.id)
     await brokerApi.delete(res.data.id)
-    // Could show result to user here
     console.log('Test result:', testRes.data.success ? 'OK' : 'FAILED')
   } catch (e) {
     console.error('Test failed:', e)
@@ -225,8 +253,12 @@ async function submit() {
 
   saving.value = true
   try {
-    await brokerApi.create({ ...form.value })
-    emit('created')
+    if (isEdit.value) {
+      await brokerApi.update(props.brokerId, { ...form.value })
+    } else {
+      await brokerApi.create({ ...form.value })
+    }
+    emit('saved')
     close()
   } catch (e) {
     console.error('Save failed:', e)
@@ -236,7 +268,6 @@ async function submit() {
 }
 
 function close() {
-  // Reset form for next open
   form.value = {
     name: '',
     broker_type: '',
@@ -249,9 +280,14 @@ function close() {
   emit('update:modelValue', false)
 }
 
-// Reload types whenever dialog opens
-watch(() => props.modelValue, (open) => {
-  if (open) loadTypes()
+// Reload types and data whenever dialog opens
+watch(() => props.modelValue, async (open) => {
+  if (open) {
+    await loadTypes()
+    if (isEdit.value) {
+      await loadExisting()
+    }
+  }
 })
 </script>
 

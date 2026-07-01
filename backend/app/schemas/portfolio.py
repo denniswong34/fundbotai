@@ -215,3 +215,43 @@ class AllocationData(BaseModel):
     market_value: Decimal
     drift_pct: Decimal
     color: str = "#4CAF50"
+
+
+# ── Bulk Order Actions ─────────────────────────────────────
+
+
+class BulkCancelRequest(BaseModel):
+    order_ids: list[int]
+
+
+class BulkDeleteRequest(BaseModel):
+    order_ids: list[int]
+
+
+class ReplaceOrderRequest(BaseModel):
+    new_order_type: str = Field(default="market", pattern=r"^(market|limit)$")
+    new_limit_price: Optional[Decimal] = None
+
+
+class BulkActionResponse(BaseModel):
+    success: int
+    failed: int
+    errors: Optional[list[str]] = None
+
+
+# ── Broker Orders / Trades ────────────────────────────────
+
+
+class BrokerOrderItem(BaseModel):
+    id: str
+    symbol: str
+    side: str
+    order_type: str
+    qty: float
+    filled_qty: float
+    price: float
+    avg_fill_price: float
+    status: str
+    broker_order_id: str
+    created_at: str
+    source: str = "broker"

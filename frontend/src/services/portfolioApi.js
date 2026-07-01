@@ -78,4 +78,34 @@ export default {
   allocation(portfolioId) {
     return client.get(`/portfolios/${portfolioId}/allocation`)
   },
+
+  // ── Orders ────────────────────────────────────────────
+
+  orders(portfolioId) {
+    return client.get(`/portfolios/${portfolioId}/orders`)
+  },
+
+  // ── Bulk Order Actions ────────────────────────────────
+
+  bulkCancelOrders(portfolioId, orderIds) {
+    return client.post(`/portfolios/${portfolioId}/orders/bulk-cancel`, { order_ids: orderIds })
+  },
+
+  replaceOrder(portfolioId, orderId, data) {
+    return client.put(`/portfolios/${portfolioId}/orders/${orderId}/replace`, data)
+  },
+
+  bulkDeleteOrders(portfolioId, orderIds) {
+    return client.post(`/portfolios/${portfolioId}/orders/bulk-delete`, { order_ids: orderIds })
+  },
+
+  // ── Broker Orders & Trades ────────────────────────────
+
+  brokerOrders(portfolioId) {
+    return client.get(`/portfolios/${portfolioId}/broker/orders`)
+  },
+
+  brokerTrades(portfolioId) {
+    return client.get(`/portfolios/${portfolioId}/broker/trades`)
+  },
 }

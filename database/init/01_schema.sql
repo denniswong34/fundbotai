@@ -74,6 +74,7 @@ CREATE TABLE IF NOT EXISTS broker_connections (
     broker_type VARCHAR(50) NOT NULL DEFAULT 'paper',
     market_type ENUM('stocks', 'crypto', 'both') NOT NULL DEFAULT 'stocks',
     is_active BOOLEAN DEFAULT TRUE,
+    sandbox BOOLEAN NOT NULL DEFAULT TRUE COMMENT 'True=sandbox/testnet/paper, False=live/production',
     config_json JSON DEFAULT NULL,
     sub_account_id VARCHAR(100),
     is_connected BOOLEAN DEFAULT FALSE,

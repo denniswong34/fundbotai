@@ -32,6 +32,10 @@ class BrokerConnection(Base):
     # Multi-account support: store which sub-account this connection uses
     sub_account_id = Column(String(100), nullable=True)
 
+    # Sandbox / Live mode
+    sandbox = Column(Boolean, default=True, nullable=False,
+                     comment="True=sandbox/testnet/paper, False=live/production")
+
     # Connection status
     is_connected = Column(Boolean, default=False)
     last_connected_at = Column(DateTime, nullable=True)

@@ -11,7 +11,10 @@
       <v-card-text v-if="loading" class="text-center py-6">
         <v-progress-circular indeterminate color="primary" />
       </v-card-text>
-      <v-card-text v-else-if="plan">
+      <v-card-text v-else-if="error" class="py-4">
+        <v-alert type="error" density="compact" variant="tonal">{{ error }}</v-alert>
+      </v-card-text>
+      <v-card-text v-else-if="plan" class="pa-0">
         <v-table density="compact">
           <thead>
             <tr>
@@ -95,6 +98,7 @@ const portfolioStore = usePortfolioStore()
 const plan = ref(null)
 const loading = ref(false)
 const executing = ref(false)
+const error = ref(null)
 const orderType = ref('market')
 
 function formatCurrency(val) {
@@ -104,8 +108,12 @@ function formatCurrency(val) {
 
 async function loadPlan() {
   loading.value = true
+  error.value = null
   try {
     plan.value = await portfolioStore.rebalancePlan(props.portfolioId)
+  } catch (e) {
+    error.value = e.response?.data?.detail || 'Failed to calculate rebalance plan'
+    plan.value = null
   } finally {
     loading.value = false
   }
@@ -113,6 +121,7 @@ async function loadPlan() {
 
 async function execute() {
   executing.value = true
+  error.value = null
   try {
     await portfolioStore.rebalanceExecute(props.portfolioId, {
       order_type: orderType.value,
@@ -120,13 +129,19 @@ async function execute() {
     })
     emit('executed')
     emit('update:modelValue', false)
+  } catch (e) {
+    error.value = e.response?.data?.detail || 'Failed to execute rebalance'
   } finally {
     executing.value = false
   }
 }
 
 watch(() => props.modelValue, (val) => {
-  if (val) loadPlan()
+  if (val) {
+    plan.value = null
+    error.value = null
+    loadPlan()
+  }
 })
 </script>
 

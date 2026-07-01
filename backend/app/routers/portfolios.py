@@ -23,8 +23,13 @@ from app.schemas.portfolio import (
     RebalanceOrderResponse,
     PerformanceData,
     AllocationData,
+    BulkCancelRequest,
+    BulkDeleteRequest,
+    ReplaceOrderRequest,
+    BulkActionResponse,
+    BrokerOrderItem,
 )
-from app.services.portfolio_service import PortfolioManager, PortfolioNotFound, HoldingNotFound, InsufficientCapitalError
+from app.services.portfolio_service import PortfolioManager, PortfolioNotFound, HoldingNotFound, InsufficientCapitalError, PortfolioError
 
 router = APIRouter(prefix="/api/portfolios", tags=["portfolios"])
 
@@ -276,6 +281,25 @@ async def sync_portfolio(
     return result
 
 
+# ── Orders / Trades ─────────────────────────────────────────
+
+
+@router.get("/{portfolio_id}/orders", response_model=list[RebalanceOrderResponse])
+async def portfolio_orders(
+    portfolio_id: int,
+    user: User = Depends(get_current_user),
+    org: Organization = Depends(get_current_org),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get all rebalance orders for a portfolio (ordered by most recent first)."""
+    pm = _get_pm(db)
+    try:
+        await pm.get_portfolio(org.id, portfolio_id)
+    except PortfolioNotFound:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Portfolio not found")
+    return await pm.get_rebalance_orders(portfolio_id, org.id)
+
+
 # ── Performance & Allocation ────────────────────────────────
 
 
@@ -310,3 +334,100 @@ async def portfolio_allocation(
     except PortfolioNotFound:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Portfolio not found")
     return await pm.get_allocation(portfolio_id)
+
+
+# ── Bulk Order Actions ────────────────────────────────────
+
+
+@router.post("/{portfolio_id}/orders/bulk-cancel", response_model=BulkActionResponse)
+async def bulk_cancel_orders(
+    portfolio_id: int,
+    req: BulkCancelRequest,
+    user: User = Depends(get_current_user),
+    org: Organization = Depends(get_current_org),
+    db: AsyncSession = Depends(get_db),
+):
+    """Cancel one or more open orders by ID (bulk)."""
+    pm = _get_pm(db)
+    try:
+        await pm.get_portfolio(org.id, portfolio_id)
+    except PortfolioNotFound:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Portfolio not found")
+    return await pm.cancel_orders(portfolio_id, req.order_ids, org.id)
+
+
+@router.put("/{portfolio_id}/orders/{order_id}/replace", response_model=RebalanceOrderResponse)
+async def replace_order(
+    portfolio_id: int,
+    order_id: int,
+    req: ReplaceOrderRequest,
+    user: User = Depends(get_current_user),
+    org: Organization = Depends(get_current_org),
+    db: AsyncSession = Depends(get_db),
+):
+    """Replace (cancel + replace) an existing open order with a new type/price."""
+    pm = _get_pm(db)
+    try:
+        await pm.get_portfolio(org.id, portfolio_id)
+    except PortfolioNotFound:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Portfolio not found")
+    try:
+        return await pm.replace_order(
+            portfolio_id, order_id, org.id,
+            new_order_type=req.new_order_type,
+            new_limit_price=req.new_limit_price,
+        )
+    except (PortfolioNotFound, PortfolioError) as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+
+@router.post("/{portfolio_id}/orders/bulk-delete", response_model=BulkActionResponse)
+async def bulk_delete_orders(
+    portfolio_id: int,
+    req: BulkDeleteRequest,
+    user: User = Depends(get_current_user),
+    org: Organization = Depends(get_current_org),
+    db: AsyncSession = Depends(get_db),
+):
+    """Permanently delete orders from local DB (only final-status orders)."""
+    pm = _get_pm(db)
+    try:
+        await pm.get_portfolio(org.id, portfolio_id)
+    except PortfolioNotFound:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Portfolio not found")
+    return await pm.delete_orders(portfolio_id, req.order_ids, org.id)
+
+
+# ── Broker Orders & Trades ────────────────────────────────
+
+
+@router.get("/{portfolio_id}/broker/orders", response_model=list[BrokerOrderItem])
+async def broker_open_orders(
+    portfolio_id: int,
+    user: User = Depends(get_current_user),
+    org: Organization = Depends(get_current_org),
+    db: AsyncSession = Depends(get_db),
+):
+    """Fetch live open orders from the linked broker (e.g. Webull HK)."""
+    pm = _get_pm(db)
+    try:
+        await pm.get_portfolio(org.id, portfolio_id)
+    except PortfolioNotFound:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Portfolio not found")
+    return await pm.get_broker_open_orders(portfolio_id, org.id)
+
+
+@router.get("/{portfolio_id}/broker/trades", response_model=list[BrokerOrderItem])
+async def broker_trades(
+    portfolio_id: int,
+    user: User = Depends(get_current_user),
+    org: Organization = Depends(get_current_org),
+    db: AsyncSession = Depends(get_db),
+):
+    """Fetch trade history (filled orders) from the linked broker."""
+    pm = _get_pm(db)
+    try:
+        await pm.get_portfolio(org.id, portfolio_id)
+    except PortfolioNotFound:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Portfolio not found")
+    return await pm.get_broker_trades(portfolio_id, org.id)

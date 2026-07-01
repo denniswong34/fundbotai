@@ -37,12 +37,29 @@
                 v-model="formData.broker_connection_id"
                 :label="$t('common.broker')"
                 :items="brokerOptions"
-                item-title="name"
+                item-title="label"
                 item-value="id"
                 variant="outlined"
                 density="compact"
                 clearable
-              />
+              >
+                <template v-slot:item="{ props, item }">
+                  <v-list-item v-bind="props" :title="item.raw.name">
+                    <template v-slot:subtitle>
+                      <v-chip size="x-small" :color="item.raw.is_connected ? 'success' : 'grey'" class="mr-1">
+                        {{ item.raw.is_connected ? 'ONLINE' : 'OFFLINE' }}
+                      </v-chip>
+                      <span class="text-caption text-medium-emphasis">{{ item.raw.broker_type }}</span>
+                    </template>
+                  </v-list-item>
+                </template>
+                <template v-slot:selection="{ item }">
+                  <span>{{ item.raw.name }}</span>
+                  <v-chip size="x-small" :color="item.raw.is_connected ? 'success' : 'grey'" class="ml-1">
+                    {{ item.raw.is_connected ? 'ONLINE' : 'OFFLINE' }}
+                  </v-chip>
+                </template>
+              </v-select>
             </v-col>
           </v-row>
 
@@ -181,7 +198,10 @@ async function submit() {
 async function loadBrokers() {
   try {
     const res = await brokerApi.list()
-    brokerOptions.value = res.data
+    brokerOptions.value = (res.data || []).map(b => ({
+      ...b,
+      label: `${b.name}${b.is_connected ? ' ✅' : ' ❌'}`
+    }))
   } catch {
     brokerOptions.value = []
   }
@@ -208,13 +228,18 @@ watch(() => props.modelValue, (val) => {
         name: '',
         description: '',
         base_currency: 'USD',
-        broker_connection_id: null,
+        broker_connection_id: null, // Auto-select first connected broker below
         rebalance_order_type: 'market',
         drift_threshold_pct: 5.00,
         cash_reserve_pct: 0.00,
         auto_rebalance_enabled: false,
         rebalance_frequency: 'drift_only',
         holdings: [],
+      }
+      // Auto-select the first connected broker
+      const connected = brokerOptions.value.find(b => b.is_connected)
+      if (connected) {
+        formData.value.broker_connection_id = connected.id
       }
     }
   }
