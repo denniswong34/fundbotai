@@ -15,6 +15,7 @@
 | [07-risk-management.md](07-risk-management.md) | Risk management framework, VaR, drawdown controls |
 | [08-performance-evaluation.md](08-performance-evaluation.md) | Performance evaluation, benchmark comparison, and reporting |
 | [09-implementation-roadmap.md](09-implementation-roadmap.md) | Phased implementation plan with timeline estimates |
+| [10-rag-strategy.md](10-rag-strategy.md) | RAG strategy — why it's needed, how it works, open-source tool selection |
 
 ## Core Concept
 
