@@ -6,6 +6,7 @@ import BrokerListPage from '@/views/broker/BrokerListPage.vue'
 import LoginPage from '@/views/auth/LoginPage.vue'
 import SettingsPage from '@/views/auth/SettingsPage.vue'
 import OrgAdminPage from '@/views/org/OrgAdminPage.vue'
+import AiArenaPage from '@/views/arena/AiArenaPage.vue'
 
 const routes = [
   {
@@ -37,6 +38,12 @@ const routes = [
     path: '/brokers',
     name: 'Brokers',
     component: BrokerListPage,
+    meta: { requiresAuth: true },
+  },
+  {
+    path: '/arena',
+    name: 'AiArena',
+    component: AiArenaPage,
     meta: { requiresAuth: true },
   },
   {

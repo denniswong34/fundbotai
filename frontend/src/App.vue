@@ -79,6 +79,7 @@ const themeClass = computed(() => settingsStore.theme)
 
 const navItems = [
   { title: 'Dashboard', titleKey: 'nav.dashboard', icon: 'mdi-view-dashboard', to: '/' },
+  { title: 'Arena', titleKey: 'nav.arena', icon: 'mdi-robot', to: '/arena' },
   { title: 'Portfolios', titleKey: 'nav.portfolios', icon: 'mdi-briefcase-variant', to: '/portfolios' },
   { title: 'Brokers', titleKey: 'nav.brokers', icon: 'mdi-link-variant', to: '/brokers' },
   { title: 'Performance', titleKey: 'nav.performance', icon: 'mdi-chart-line', to: '/performance' },
