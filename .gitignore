@@ -23,4 +23,3 @@ backend/app/.env
 *.sqlite3
 
 *.log
-backend/conf/

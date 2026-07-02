@@ -12,7 +12,7 @@ from app.config import get_settings
 from app.database import init_db
 from app.i18n import load_translations
 from app.middleware import TenantMiddleware
-from app.routers import auth, orgs, portfolios, brokers, ai_managers
+from app.routers import auth, orgs, portfolios, brokers
 
 settings = get_settings()
 logger = logging.getLogger(__name__)
@@ -53,7 +53,6 @@ app.include_router(auth.router)
 app.include_router(orgs.router)
 app.include_router(portfolios.router)
 app.include_router(brokers.router)
-app.include_router(ai_managers.router)
 
 
 @app.get("/api/health")

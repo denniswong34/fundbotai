@@ -1,4 +1,4 @@
-"""FundBot AI SQLAlchemy Models"""
+"""FundPort SQLAlchemy Models"""
 
 from app.database import Base
 from app.models.user import User
@@ -7,7 +7,6 @@ from app.models.portfolio import Portfolio, PortfolioHolding, PortfolioRebalance
 from app.models.notification import Notification
 from app.models.organization import Organization, OrganizationMember
 from app.models.user_settings import UserSettings
-from app.models.ai_manager import AiManager, AiDecisionLog
 
 __all__ = [
     "User",
@@ -20,6 +19,4 @@ __all__ = [
     "Organization",
     "OrganizationMember",
     "UserSettings",
-    "AiManager",
-    "AiDecisionLog",
 ]
